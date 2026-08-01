@@ -1,0 +1,8 @@
+env/
+__pycache__/
+*.pyc
+
+# Uretilen ara/debug dosyalari (klasorun kendisi surumde kalsin diye
+# icerigi yok sayilir, .gitkeep haric).
+output/*
+!output/.gitkeep

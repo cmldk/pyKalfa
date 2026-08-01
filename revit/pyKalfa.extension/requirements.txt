@@ -1,0 +1,13 @@
+# Butun islevlerin paylastigi tek sanal ortam (env/).
+# Hangi paketi hangi islev kullaniyor:
+
+# parsel_bina (Parsel/Bina Aktar)
+opencv-python-headless>=4.9
+scikit-image>=0.22
+easyocr>=1.7
+
+# duvar (Duvar Aktar)
+ezdxf>=1.1
+
+# ortak
+numpy>=1.26

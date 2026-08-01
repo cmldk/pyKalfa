@@ -1,0 +1,7 @@
+title: Duvar Aktar
+tooltip: >
+  Polycam/CAD kat plani DXF'i secip, duvar yuksekligi, level ve duvar
+  tipini projeden secerek cizgilerden gercek Revit duvarlari (Wall)
+  olusturur. DXF okuma (ezdxf), birim tespiti, kisa cizgi filtresi ve
+  kolinear parca birlestirme arka planda proje venv'i (env/) uzerinden
+  otomatik yapilir. Olusturulamayan cizgiler ayrica raporlanir.

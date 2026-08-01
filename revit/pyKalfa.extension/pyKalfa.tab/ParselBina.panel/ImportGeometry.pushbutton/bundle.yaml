@@ -1,0 +1,6 @@
+title: Parsel/Bina Aktar
+tooltip: >
+  parsel.png ve bina.png secip, harita olcegini girip, line style ve
+  filled region tipini projeden secerek parsel sinirlarini (DetailLine)
+  ve bina alanlarini (FilledRegion) aktif view'e olusturur. Goruntu
+  isleme arka planda proje venv'i (env/) uzerinden otomatik yapilir.
