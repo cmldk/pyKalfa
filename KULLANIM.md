@@ -22,7 +22,7 @@ detayına kadar anlatır.
 2. Bölüm A — İlk Kurulum (Bir Kereye Mahsus)
    - A.1. Python Kurulumu
    - A.2. Projeyi İndirme
-   - A.3. İlk Kurulumu Çalıştırma (setup.ps1)
+   - A.3. Otomatik Kurulum Hakkında
    - A.4. pyRevit Kurulumu
    - A.5. pyKalfa Extension'ını pyRevit'e Tanıtma
 3. Bölüm B — Günlük Kullanım: Parsel/Bina Aktar
@@ -150,54 +150,19 @@ pyKalfa'i iki yoldan biriyle edinebilirsiniz.
 > karakterlik dosya yolu sınırını aşıp "dosya adı çok uzun" hatasına
 > yol açabilir (bkz. Bölüm D).
 
-### A.3. İlk Kurulumu Çalıştırma (setup.ps1)
+### A.3. Otomatik Kurulum Hakkında
 
-Bu adımda, gerekli Python paketlerini **Revit'i hiç açmadan, elle ve
-kontrollü bir şekilde** kuracaksınız. Bunu önceden yapmak, olası bir
-kurulum hatasını (ör. dosya yolu uzunluğu hatası) doğrudan bu
-PowerShell penceresinde, net bir şekilde görmenizi sağlar -- Revit
-içindeyken karşılaşmaktan daha kolay teşhis edilir.
+Eski sürümlerde bu adımda `setup.ps1` adlı bir script'i elle
+çalıştırmanız isteniyordu. **Artık buna gerek yok** — bu adım tamamen
+kaldırıldı.
 
-1. Adım A.2'de indirdiğiniz/çıkardığınız klasörün içine girin, sonra
-   `revit\pyKalfa.extension` alt klasörüne gidin.
-2. Bu klasörün içinde boş bir yere **Shift tuşuna basılı tutarak sağ
-   tıklayın**, açılan menüden **"PowerShell penceresini burada aç"**
-   (Open PowerShell window here) seçeneğine tıklayın.
-   > Alternatif: PowerShell'i normal açıp `cd` komutuyla bu klasöre
-   > gidebilirsiniz.
-3. Açılan PowerShell penceresine şunu yazıp Enter'a basın:
-   ```
-   .\setup.ps1
-   ```
-   > **Eğer "çalıştırılamıyor çünkü bu sistemde script çalıştırma devre
-   > dışı" gibi kırmızı bir hata görürseniz** (execution policy hatası),
-   > şunu bir kere çalıştırıp tekrar deneyin:
-   > ```
-   > Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
-   > ```
-   > (Onay isterse `E` / `Y` yazıp Enter'a basın.)
-   > **Eğer pencere hiçbir mesaj göstermeden aniden kapanıyorsa:**
-   > script her zaman sonunda "Kapatmak için Enter'a basın" diye
-   > bekler; pencere yine de kapanıyorsa yukarıdaki execution policy
-   > hatasına takılmış, script hiç çalışmamış olabilir.
-4. Script sırasıyla:
-   - `env` adında bir Python sanal ortamı oluşturur,
-   - `requirements.txt` dosyasındaki paketleri (görüntü işleme + OCR
-     kütüphaneleri) indirip kurar.
-   > **Süre uyarısı:** Bu işlem, internet hızınıza bağlı olarak
-   > **birkaç dakika ile on dakika arası** sürebilir (OCR kütüphanesi
-   > büyük bir indirmedir, yaklaşık 1-1.5 GB). Pencerede akan yazıları
-   > izleyerek ilerlediğini görebilirsiniz.
-5. Sonunda `Kurulum tamamlandi.` yazısını görmelisiniz. Bir hata
-   görürseniz Bölüm D'deki (Sık Karşılaşılan Durumlar) ilgili satıra
-   bakın -- özellikle "dosya adı çok uzun" / `WinError 206` hatası
-   sıkça karşılaşılan, kolayca çözülebilen bir durumdur.
+Python paketlerinin kurulumu artık tamamen otomatiktir: Adım A.5'te
+pyKalfa'yı pyRevit'e tanıtıp Revit'i yeniden başlattığınızda (veya
+pyRevit'i "Reload" ettiğinizde), extension'ın kendi `startup.py`
+dosyası pyRevit tarafından otomatik çalıştırılır ve gerekli kurulumu
+kendisi yapar. Ayrıntılı akış Adım B.3'te anlatılıyor.
 
-> **Not:** Bu adımı atlayıp doğrudan Revit'e geçerseniz de sorun
-> değildir -- Bölüm B.3'te anlatıldığı gibi, buton ilk basıldığında
-> aynı kurulumu kendisi otomatik olarak dener. Ancak bu adımı önceden,
-> elle yapmak, olası hataları Revit'e hiç girmeden görüp çözmenizi
-> sağladığı için **önerilir**.
+Doğrudan Adım A.4'e geçebilirsiniz.
 
 ### A.4. pyRevit Kurulumu
 
@@ -286,36 +251,53 @@ B.2'yi tekrar deneyin.
 
 ### B.3. (Normalde Görmezsiniz) Otomatik Ortam Kurulumu
 
-Adım A.3'ü (setup.ps1'i elle çalıştırma) uyguladıysanız, `env` klasörü
-zaten hazır olduğu için **bu adımı hiç görmeyeceksiniz** — doğrudan
-B.4'e geçilir. Bu bölüm sadece, A.3'ü atlayıp doğrudan Revit'e
-geçenler veya `env` klasörü herhangi bir sebeple silinmiş/bulunamıyor
-olanlar için bir yedek (fallback) mekanizmayı açıklar.
+Görüntü işleme ortamının (`env/`) kurulumu artık **Adım A.5'te**,
+pyKalfa'yı pyRevit'e tanıtıp Revit'i yeniden başlattığınızda/pyRevit'i
+reload ettiğinizde kendiliğinden olur — extension'ın kök dizinindeki
+`startup.py` dosyası, pyRevit tarafından extension her
+yüklendiğinde/reload edildiğinde otomatik çalıştırılır. Yani **bu
+adıma normalde hiç butona basmadan, Adım A.5'i tamamlarken**
+girersiniz; buraya ayrıca bir açıklama olarak bırakılmasının sebebi, o
+sırada ne olduğunu anlamanızı sağlamaktır.
 
-1. Şu başlıkla bir bilgi penceresi açılır: **"pyKalfa - ilk
-   kurulum"**, içeriği:
-   > *"İlk çalıştırma: görüntü işleme ortamı (env/) kuruluyor. Bu birkaç
-   > dakika sürebilir, pencere kapanınca işlem otomatik devam edecek."*
+1. Şu başlıkla bir bilgi penceresi açılır: **"pyKalfa - kurulum"**,
+   içeriği:
+   > *"pyKalfa ilk kurulum/güncelleme yapılıyor. Bu birkaç dakika
+   > sürebilir; pencere kapanınca işlem otomatik devam edecek."*
 2. **Tamam**'a basın.
-3. Script, arka planda sisteminizdeki Python'u bulup kendi izole çalışma
-   ortamını kurar ve gerekli paketleri (görüntü işleme + OCR
-   kütüphaneleri) indirir. Bu sırada bir **ilerleme çubuğu (progress
-   bar)** görürsünüz; yüzde değeri arttıkça kurulumun ilerlediğini
-   anlayabilirsiniz (paket indirme aşamasında yüzde, gerçek indirme
-   oranını değil, "bir şeyler oluyor" bilgisini yansıtan yaklaşık bir
-   değerdir — %95'e kadar yavaşça ilerler, bitince %100'e tamamlanır).
+3. Script, arka planda sisteminizdeki Python'u bulup `C:\pyKalfa\env`
+   adında izole bir çalışma ortamı kurar ve gerekli paketleri (görüntü
+   işleme + OCR kütüphaneleri) indirir. Bu sırada bir **ilerleme
+   çubuğu (progress bar)** görürsünüz; yüzde değeri arttıkça kurulumun
+   ilerlediğini anlayabilirsiniz (paket indirme aşamasında yüzde,
+   gerçek indirme oranını değil, "bir şeyler oluyor" bilgisini
+   yansıtan yaklaşık bir değerdir — %95'e kadar yavaşça ilerler,
+   bitince %100'e tamamlanır).
    > **Süre uyarısı:** Bu işlem, internet hızınıza bağlı olarak
    > **birkaç dakika ile on dakika arası** sürebilir (OCR kütüphanesi
    > büyük bir indirmedir, yaklaşık 1-1.5 GB). İlerleme çubuğu bir süre
-   > yavaş görünebilir — bu normaldir, bekleyin, kapatmayın.
-4. Kurulum tamamlanınca script otomatik olarak Adım B.4'e geçer, ek bir
-   işlem yapmanız gerekmez.
+   > yavaş görünebilir — bu normaldir, bekleyin, kapatmayın. Bu süre
+   > boyunca pyRevit, pyKalfa sekmesini yüklemeyi bekler; Revit'in
+   > diğer kısımları donmuş görünmez.
+4. Kurulum tamamlanınca üst menüde **pyKalfa** sekmesi belirir; Adım
+   A.5'in geri kalanına (veya doğrudan Bölüm B.4'e) devam edebilirsiniz.
+5. **Sonraki her Revit açılışında** `env/` zaten güncel olduğu için bu
+   kontrol anında biter — hiçbir pencere/bekleme görmezsiniz.
+6. `requirements.txt` ileride güncellenirse (ör. yeni bir sürümle yeni
+   bir paket eklenirse), bir sonraki Revit açılışında sadece eksik
+   paket(ler) otomatik olarak kurulur; venv'in tamamı yeniden
+   oluşturulmaz.
 
-**Bu adımda bir hata alırsanız:** "Otomatik kurulum başarısız oldu"
-başlıklı bir pencere çıkar ve hatanın detayını gösterir. Genelde
+**Bu adımda bir hata alırsanız:** "pyKalfa otomatik kurulumu başarısız
+oldu" başlıklı bir pencere çıkar ve hatanın detayını gösterir. Genelde
 sebep, sisteminizde Python'un kurulu olmamasıdır (bkz. Adım A.1).
-Pencere size, alternatif olarak proje klasöründeki `setup.ps1`
-dosyasını elle çalıştırmanızı da önerir.
+Ayrıntılı kayıt için `C:\pyKalfa\install.log` dosyasına bakabilirsiniz.
+
+> **Güvenlik ağı:** `startup.py` herhangi bir sebeple çalışmadıysa
+> (ör. çok eski bir pyRevit sürümü) veya `C:\pyKalfa\env` klasörü
+> sonradan silinmişse, ilk buton tıklaması aynı kurulumu kendisi
+> tamamlar — yukarıdaki adımların aynısını, sadece bu kez butona
+> bastığınızda görürsünüz.
 
 ### B.4. Parsel Görselini Seçme
 
@@ -604,10 +586,9 @@ değil. Beklenen çalışma şekli:
 | --- | --- |
 | Buton hiçbir şey yapmıyor / pyKalfa sekmesi görünmüyor | Adım A.5'i (extension tanıtma) tekrar kontrol edin; pyRevit'i "Reload" edin veya Revit'i yeniden başlatın. |
 | "Aktif view bir plan/detay/kesit/cephe view'i olmalı" | 3D görünümdesiniz; Adım B.1'e dönüp 2D bir görünüme geçin. |
-| Kurulum (`setup.ps1` veya otomatik) çok uzun sürüyor / hiç bitmiyor | İnternet bağlantınızı kontrol edin. OCR kütüphanesi büyük (~1-1.5 GB), yavaş bağlantılarda 10+ dakika sürebilir. |
-| `setup.ps1` çift tıklayınca/çalıştırınca **hiç mesaj göstermeden aniden kapanıyor** | İki olası sebep: **(1)** PowerShell'in "script çalıştırma" güvenlik ayarı (execution policy) engelliyor -- PowerShell açıp `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned` çalıştırıp tekrar deneyin. **(2)** Script içinde artık her zaman "Kapatmak için Enter'a basın" ile bekleme var; hâlâ kapanıyorsa script hiç çalışmamış demektir, (1)'i uygulayın. **Not:** `env` klasörünün henüz var olmaması bu hatanın sebebi DEĞİLDİR -- script zaten `env` yoksa onu oluşturmak için tasarlandı. |
-| **`ERROR: ... [WinError 206] Dosya adı veya uzantısı çok uzun`** | Windows'un 260 karakterlik dosya yolu sınırına takıldınız (OCR kütüphanesinin iç dosya adları çok derin/uzun). **İki çözüm** (ikisini birlikte yapmak en güvenlisi): **(1)** Yönetici olarak PowerShell açıp şunu çalıştırın: `New-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\FileSystem" -Name "LongPathsEnabled" -Value 1 -PropertyType DWORD -Force`, sonra bilgisayarı yeniden başlatın. **(2)** Proje klasörünü daha kısa bir yola taşıyın (ör. `C:\pyKalfa`), Adım A.5'teki extension yolunu da buna göre güncelleyin. Sonra `env` klasörünü silip Adım A.3'ü (`setup.ps1`) tekrar çalıştırın. |
-| "Otomatik kurulum başarısız oldu" | Sisteminizde Python kurulu olduğundan emin olun (Adım A.1). Gerekirse proje klasöründeki `revit\pyKalfa.extension\setup.ps1` dosyasını Adım A.3'teki gibi elle çalıştırın -- hatayı doğrudan orada, daha net görürsünüz. |
+| Kurulum (ilk açılışta otomatik) çok uzun sürüyor / hiç bitmiyor | İnternet bağlantınızı kontrol edin. OCR kütüphanesi büyük (~1-1.5 GB), yavaş bağlantılarda 10+ dakika sürebilir. |
+| **`ERROR: ... [WinError 206] Dosya adı veya uzantısı çok uzun`** | `env/` artık her zaman sabit ve kısa bir yolda (`C:\pyKalfa\env`) kurulduğu için bu hata normalde hiç çıkmaz — extension'ı nereye klonladığınızın önemi yok. Yine de çıkarsa: Yönetici olarak PowerShell açıp şunu çalıştırın: `New-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\FileSystem" -Name "LongPathsEnabled" -Value 1 -PropertyType DWORD -Force`, sonra bilgisayarı yeniden başlatıp `C:\pyKalfa\env` klasörünü silip Revit'i tekrar açın. |
+| "pyKalfa otomatik kurulumu başarısız oldu" | Sisteminizde Python kurulu olduğundan emin olun (Adım A.1). Ayrıntı için `C:\pyKalfa\install.log` dosyasına bakın, sonra Revit'i yeniden açın (kurulum otomatik tekrar denenir). |
 | "Görüntü işleme başarısız oldu" | Genelde yanlış dosya seçimi veya geçersiz ölçek değeridir; hata mesajındaki detayı okuyun. |
 | "Projede tanımlı bir line style / Filled Region Type / Text Note Type bulunamadı" | Revit projenizde ilgili tip tanımlı değil; Manage sekmesinden en az bir tane oluşturup tekrar deneyin. |
 | Parsel çizgileri/bina alanları yanlış yerde veya çok küçük/büyük görünüyor | Adım B.6'da girilen ölçek değerini kontrol edin; kaynak haritanın gerçek basım ölçeğiyle eşleştiğinden emin olun. |

@@ -691,6 +691,102 @@ bildirim olmadan bekliyor, sonra stil sorulari geliyordu.
       baslik degistirmeden ilerlemeye devam edecek sekilde korumaya
       alindi.
 
+## Faz 14 - Kurulum: `setup.bat`/`setup.ps1` kaldirildi, `startup.py` ile tam otomatik (Tamam, Revit'te test edilecek)
+
+Kullanicidan gelen istek: kurulumun tek elle calistirilan adimi bile
+kalmasin -- extension GitHub'dan pyRevit'e eklenip Revit acilinca her
+sey kendiliginden hazir olsun.
+
+- [x] Kok dizindeki `setup.bat` ve `revit/pyKalfa.extension/setup.ps1`
+      **kaldirildi**. Kurulum artik `revit/pyKalfa.extension/startup.py`
+      araciligiyla oluyor: pyRevit bu dosyayi extension her
+      yuklendiginde/reload edildiginde otomatik calistirir.
+- [x] **Mimari karar -- tasinan sadece `env/`, extension DEGIL:** ilk
+      tasarimda (`setup.bat`) butun extension `C:\pyKalfa\pyKalfa.extension`
+      klasorune kopyalaniyordu, ama bu yarim bir cozumdu: pyRevit
+      extension'i kullanicinin Custom Extension Folder olarak ekledigi
+      (muhtemelen uzun) yoldan yuklemeye devam ediyordu, kopya gorunmez
+      kaliyordu -- kullanicinin ayrica pyRevit ayarlarini elle
+      guncellemesi gerekiyordu. MAX_PATH sorununun gercek kaynagi sadece
+      `env/`'in (pip'in kurdugu paketlerin, ozellikle OCR kutuphanesinin)
+      ic dosya adlari; `.tab/`/`lib/`/`pysrc/` hicbir zaman sorun
+      cikarmaz. Bu yuzden sadece `env/`, extension nerede olursa olsun,
+      sabit ve kisa bir sistem yoluna (`C:\pyKalfa\env`) kuruluyor;
+      extension'in kendisi hic tasinmiyor, kullanicinin pyRevit
+      ayarlarinda hicbir sey degismesine gerek kalmiyor.
+- [x] `lib/pykalfa/bootstrap.py` icindeki kurulum mantigi
+      `lib/pykalfa/installer/` altina bolundu:
+      `env_location.py` (sabit yollar), `venv.py` (Python bulma +
+      venv olusturma), `packages.py` (pip install + `requirements.txt`
+      hash'i), `state.py` (`install.json` okuma/yazma), `logger.py`
+      (`install.log`'a yazan dosya logu), `orchestrator.py`
+      (`ensure_installed()` + `bootstrap()` -- akisi yoneten tek yer).
+      `bootstrap.py` artik sadece ince bir geriye-donuk-uyumluluk
+      katmani: `ensure_env()` imzasi/davranisi (basarisizlikta
+      `exitscript=True`) aynen korunup `orchestrator.ensure_installed()`'a
+      devrediliyor -- `ImportGeometry.pushbutton` ve
+      `DuvarAktar.pushbutton` hicbir kod degisikligi gerektirmedi.
+- [x] **Guncelleme tespiti:** `install.json`, en son kurulan
+      `requirements.txt`'in sha256 hash'ini tutuyor. Hash degismisse
+      (ör. ileride yeni bir paket eklenirse) `env/` SILINMEDEN sadece
+      `pip install -r requirements.txt` tekrar calistiriliyor; hash
+      ayniysa (neredeyse her zaman) kontrol aninda donuyor.
+- [x] **Bilinen ve kabul edilen odun:** `startup.py` pyRevit tarafindan
+      SENKRON calistirilir -- ilk kurulumda (veya `requirements.txt`
+      guncellendiginde) pip kurulumu birkac dakika surerse, pyRevit bu
+      extension'i yuklemeyi o sure boyunca bekletir. Kullanici bu
+      odunu, hicbir `.bat`/`.ps1`/buton tiklamasi gerekmemesi
+      karsiliginda bilerek kabul etti (bkz. proje notlari). Eskiden
+      `bootstrap.ensure_env()` bu kurulumu ilk buton tiklamasinda,
+      Revit acilisini bloke etmeden yapiyordu -- artik sadece
+      `startup.py` calismazsa devreye giren bir guvenlik agi.
+- [x] `README.md` ve `KULLANIM.md` (Bolum A.3, B.3, Bolum D tablosu)
+      yeni akisi anlatacak sekilde guncellendi; `setup.ps1` calistirma
+      talimatlari kaldirildi.
+- [x] **HATA ve duzeltmesi -- kurulum "%20'de takili kaliyor":** ilk
+      yazimda `orchestrator`, Faz 13'te zaten teshis edilmis olan kirik
+      deseni tekrarladi (bkz. Faz 13'un son notu: "`bootstrap.py`'deki
+      eski ilerleme cubugu hala geri cagirim icinden guncelliyor").
+      Iki ayri kusur vardi:
+      1. `pb.update_progress()`, `on_line` geri cagiriminin ICINDEN --
+         yani .NET'in ARKA PLAN okuma iş parcacigindan -- cagriliyordu.
+         `forms.ProgressBar` WPF tabanlidir ve iş parcacigi baglantisi
+         (thread affinity) vardir: baska bir iş parcacigindan
+         guncellenince istisna firlatir. Bu istisna
+         `subproc.run_process` icinde `logger.debug` ile YUTULDUGU icin
+         hicbir hata gorunmeden cubuk `venv` sonrasi degerinde (%20)
+         donuyordu.
+      2. `packages.install`'a `on_poll` VERILMEMISTI; `on_poll` yokken
+         `run_process` bloklayan `WaitForExit()`'e duser, yani ana iş
+         parcacigi butun pip kurulumu boyunca (dakikalarca) bloke olur
+         ve pencere hic repaint edilemez -- gorunen %20 aslinda donmus
+         bir kareydi.
+      Duzeltme, Faz 13'te `ImportGeometry.pushbutton` icin kurulan
+      dogru deseni izliyor: `on_line` SADECE veri sakliyor/dosyaya
+      logluyor, cubuk `on_poll` ile ANA iş parcacigindan guncelleniyor.
+      Ayrica pip, buyuk paketleri (torch ~1-1.5 GB) indirirken
+      dakikalarca hic satir basmadigi icin satir-basina ilerleme tek
+      basina yetmiyor; satir gelmeyen turlarda da cubuk ~4 saniyede 1
+      puan ilerletiliyor (`PIP_CREEP_EVERY_TICKS`). `venv` olusturma
+      adimi da (ensurepip yuzunden saniyeler surer) ayni sekilde
+      yoklanir hale getirildi.
+- [x] Duzeltme, gercek hata senaryosunu taklit eden bir kosumla
+      dogrulandi: sahte bir `ProgressBar` (ana iş parcacigi disindaki
+      her cagriyi gercek WPF gibi istisnayla reddeder) + `on_line`'i
+      arka plandan, `on_poll`'u ana iş parcacigindan cagiran sahte bir
+      `run_process`. Sonuc: iş parcacigi ihlali 0, cubuk monoton artiyor,
+      4 saniyelik "sessiz indirme" boyunca ilerlemeye devam ediyor.
+      Eski desen ayni kosumda beklendigi gibi %20'de donup 3 istisnayi
+      sessizce yuttu -- teshis boylece kanitlandi. **Gecti.**
+- [ ] **Test edilmedi:** gercek Revit'te `startup.py`'nin pyRevit
+      tarafindan gercekten cagirildigi ve senkron kurulumun beklendigi
+      gibi calistigi dogrulanmadi (bu ortamda Revit/pyRevit yok).
+      Kullanicinin pyRevit'i Reload edip (veya Revit'i yeniden acip)
+      denemesi bekleniyor -- ozellikle: (1) temiz bir `C:\pyKalfa`
+      durumunda ilk kurulumun basariyla tamamlanmasi, (2) sonraki
+      acilislarda kontrolun aninda bitmesi, (3) `requirements.txt`'e
+      satir eklenince sadece o paketin kurulmasi.
+
 ## Ilerleme Ozeti
 
 | Faz                             | Durum      |
@@ -707,3 +803,4 @@ bildirim olmadan bekliyor, sonra stil sorulari geliyordu.
 | 9. pyKalfa - Cok Islevli Yapi    | Test edilecek |
 | 10. Duvar Aktar (DXF -> Wall)    | MVP -- Faz 11'de yeniden yazildi |
 | 11. Duvar Aktar: Dis Hat Tanima  | Tamam, Revit'te test edilecek |
+| 14. Kurulum: startup.py ile otomatik | Tamam, Revit'te test edilecek |
