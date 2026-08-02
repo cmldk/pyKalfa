@@ -149,21 +149,21 @@ def prepare(
     output_dir: Path,
     extract_labels: bool = True,
 ) -> None:
-    _progress(5, "Olcek cubugu olculuyor")
+    _progress(5, "Ölçek çubuğu hesaplanıyor")
     scale_info = compute_scale_info(parsel_path, scale_denominator)
     meters_per_px = scale_info["meters_per_pixel"]
     feet_per_px = scale_info["feet_per_pixel"]
 
-    _progress(15, "Parsel konturlari cikariliyor")
+    _progress(15, "Parsel konturları cıkarılıyor")
     parcel_image, parcels = extract_parcels(parsel_path)
-    _progress(30, "Bina konturlari cikariliyor")
+    _progress(30, "Bina konturları cıkarılıyor")
     building_image, buildings = extract_buildings(bina_path)
     if parcel_image.shape[:2] != building_image.shape[:2]:
         raise ValueError(
             f"Goruntu boyutlari eslesmiyor: parsel={parcel_image.shape[:2]} bina={building_image.shape[:2]}"
         )
     height, width = parcel_image.shape[:2]
-    _progress(45, "Parsel-bina iliskisi hesaplaniyor")
+    _progress(45, "Parsel-bina ilişkisi hesaplaniyor")
     parcels_by_area = sorted(parcels, key=cv2.contourArea)
 
     parcel_to_buildings: dict[int, list[int]] = {i: [] for i in range(len(parcels_by_area))}
@@ -203,7 +203,7 @@ def prepare(
             }
         )
 
-    _progress(55, "Parsel cizgileri izleniyor (iskeletlestirme)")
+    _progress(55, "Parsel çizgileri izleniyor")
     _, raw_parcel_lines = extract_parcel_lines(parsel_path)
     parcel_lines = _parcel_lines_to_real_world(raw_parcel_lines, meters_per_px, feet_per_px, height)
 
@@ -212,7 +212,7 @@ def prepare(
     label_warning = None
     if extract_labels:
         # En uzun suren adim: EasyOCR ilk calistirmada modelini de indirir.
-        _progress(70, "Parsel numaralari okunuyor (OCR) - en uzun adim")
+        _progress(70, "Parsel numaralari okunuyor")
         try:
             from ocr_labels import extract_parcel_labels
 
@@ -222,7 +222,7 @@ def prepare(
             label_warning = f"Etiket OCR'i basarisiz oldu, etiketsiz devam edildi: {ex}"
             print(f"UYARI: {label_warning}")
 
-    _progress(92, "Sonuclar yaziliyor")
+    _progress(92, "Sonuçlar yaziliyor")
     output_dir.mkdir(parents=True, exist_ok=True)
     result = {
         "scale": scale_info,
