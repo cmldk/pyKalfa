@@ -697,8 +697,9 @@ Kullanicidan gelen istek: kurulumun tek elle calistirilan adimi bile
 kalmasin -- extension GitHub'dan pyRevit'e eklenip Revit acilinca her
 sey kendiliginden hazir olsun.
 
-- [x] Kok dizindeki `setup.bat` ve `revit/pyKalfa.extension/setup.ps1`
-      **kaldirildi**. Kurulum artik `revit/pyKalfa.extension/startup.py`
+- [x] Kok dizindeki `setup.bat` ve `setup.ps1` (o tarihte
+      `revit/pyKalfa.extension/` altindaydi; bkz. Faz 15)
+      **kaldirildi**. Kurulum artik `startup.py`
       araciligiyla oluyor: pyRevit bu dosyayi extension her
       yuklendiginde/reload edildiginde otomatik calistirir.
 - [x] **Mimari karar -- tasinan sadece `env/`, extension DEGIL:** ilk
@@ -787,6 +788,45 @@ sey kendiliginden hazir olsun.
       acilislarda kontrolun aninda bitmesi, (3) `requirements.txt`'e
       satir eklenince sadece o paketin kurulmasi.
 
+## Faz 15 - Repo Yapisi: Extension Kokte (Tamam, Revit'te test edilecek)
+
+Faz 14'ten sonra kullanici pyRevit'te GitHub URL'si girip kurmayi
+denedi ve **hicbir sey yuklenmedi**. Iki ayri sebep vardi:
+
+- [x] **Sebep 1 -- extension repo kokunde degildi.** pyRevit bir git
+      URL'sini kurarken repo KOKUNU klonlayip `<isim>.extension`
+      klasoru olarak kaydeder; yani repo'nun koku extension'in
+      kendisi olmalidir. Bu, `extensions/extensions.json`'daki
+      girdilerle de dogrulandi (isimler duz: `EF-Tools`, `PyRevitPlus`;
+      URL'ler repo kokunu gosteriyor) ve gercek bir ucuncu parti
+      extension olan pyRevitMEP'in kokunde `pyRevitMEP.tab`, `lib/`,
+      `extension.json` DOGRUDAN duruyor -- `.extension` sarmalayicisi
+      yok. Bizim repo'da ise extension iki klasor derindeydi
+      (`revit/pyKalfa.extension/`), dolayisiyla pyRevit klonladigi
+      kokte hicbir `.tab` bulamiyordu.
+- [x] **Cozum:** `revit/pyKalfa.extension/` altindaki her sey
+      (`startup.py`, `pyKalfa.tab/`, `lib/`, `pysrc/`, `output/`,
+      `requirements.txt`) `git mv` ile repo kokune tasindi; `revit/`
+      klasoru kaldirildi. Dokumanlar (`README.md`, `KULLANIM.md`) ve
+      ornekler (`assets/`) kokte kaldi -- pyRevitMEP de boyle yapiyor.
+- [x] `extension.json` eklendi (Extension Manager'in okudugu tanim:
+      isim, aciklama, yazar, repo adresi). `rocket_mode_compatible`
+      bilerek `False` birakildi: rocket mode motoru butun scriptler
+      arasinda paylastirir ve bu HIC test edilmedi -- test edilmemis
+      bir uyumluluk iddiasinda bulunmak yerine kapali baslatildi.
+- [x] **Kod degisikligi GEREKMEDI:** `paths.EXTENSION_ROOT` kendini
+      `lib/pykalfa/paths.py`'den uc klasor yukari cikarak turettigi
+      icin, tasima sonrasi da dogru koku buluyor (dogrulandi).
+- [x] **Sebep 2 -- yeni kod varsayilan dalda degildi.** `origin/HEAD`
+      `master`'i gosteriyor ama Faz 14'un uc commit'i `dev` dalindaydi;
+      `master` hala ilk commit'teydi (`startup.py` yok, `setup.bat`
+      var). pyRevit varsayilan dali klonladigi icin, yapi duzelse bile
+      ESKI kod inecekti. Kurulumun calismasi icin `dev` -> `master`
+      birlestirilmeli ve push edilmelidir.
+- [ ] **Test edilmedi:** gercek Revit'te URL ile kurulum denenmedi.
+      Kullanicinin `master`'a merge + push ettikten sonra denemesi
+      bekleniyor.
+
 ## Ilerleme Ozeti
 
 | Faz                             | Durum      |
@@ -804,3 +844,4 @@ sey kendiliginden hazir olsun.
 | 10. Duvar Aktar (DXF -> Wall)    | MVP -- Faz 11'de yeniden yazildi |
 | 11. Duvar Aktar: Dis Hat Tanima  | Tamam, Revit'te test edilecek |
 | 14. Kurulum: startup.py ile otomatik | Tamam, Revit'te test edilecek |
+| 15. Repo yapisi: extension kokte | Tamam, Revit'te test edilecek |
