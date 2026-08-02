@@ -1,0 +1,11 @@
+{
+    "default_enabled": "True",
+    "type": "extension",
+    "rocket_mode_compatible": "False",
+    "name": "pyKalfa",
+    "description": "Revit icin yardimci araclar: kadastro goruntulerinden parsel/bina geometrisi (DetailLine + FilledRegion + TextNote) ve kat plani DXF'inden gercek duvarlar (Wall).",
+    "author": "cmldk",
+    "author_profile": "https://github.com/cmldk",
+    "url": "https://github.com/cmldk/pyKalfa",
+    "dependencies": []
+}
