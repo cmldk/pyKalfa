@@ -11,7 +11,7 @@ ettiginde kurulumun kendiliginden tamamlanmasi.
 bir hash kontrolunden ibarettir. Ilk kurulumda veya `requirements.txt`
 degistiginde ise pip kurulumu burada, SENKRON olarak calisir -- pyRevit bu
 extension'i yuklemeyi o sure boyunca bekletir (bilinen ve kabul edilen bir
-odun; bkz. `installer/orchestrator.py` ve `ROADMAP.md`).
+odun; bkz. `installer/orchestrator.py`).
 """
 
 from pykalfa.installer.orchestrator import bootstrap
