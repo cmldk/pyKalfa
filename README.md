@@ -17,11 +17,15 @@ anlatiliyor.
 
 ## Nasil calisir (kisa mimari)
 
-Her sey tek bir klasorun (`revit/pyKalfa.extension/`) icinde,
-kendi kendine yeterli sekilde durur:
+**Repo'nun KOKU dogrudan extension'in kendisidir.** pyRevit, bir git
+URL'sini kurarken repo kokunu klonlayip `<isim>.extension` klasoru olarak
+kaydeder; bu yuzden `pyKalfa.tab/`, `lib/`, `startup.py` gibi dosyalar
+alt bir klasorde degil, kokte durur (ayni yapiyi pyRevitMEP, EF-Tools
+gibi ucuncu parti extension'lar da kullanir).
 
 ```
-revit/pyKalfa.extension/
+pyKalfa/  (repo koku = extension koku)
+  extension.json               <- Extension Manager'in okudugu tanim (isim, aciklama, yazar)
   startup.py                   <- pyRevit'in extension her yuklemede/reload'da CALISTIRDIGI script
   pyKalfa.tab/                 <- sekme; her panel/buton burada
     ParselBina.panel/ImportGeometry.pushbutton/script.py   <- SADECE bu islevin akisi
@@ -35,6 +39,7 @@ revit/pyKalfa.extension/
     duvar/                     <- DXF okuma/temizleme (ezdxf)
   requirements.txt             <- pysrc'nin bagimliliklari (ortak)
   output/                      <- gecici ara dosyalar (ortak)
+  README.md / KULLANIM.md / ROADMAP.md / assets/   <- dokuman ve ornekler
 
 C:\pyKalfa\                    <- Python sanal ortami BURADA (extension'in DISINDA), bkz. asagida
   env/
@@ -105,49 +110,46 @@ buton tiklamasi ayni kurulumu kendisi tamamlar (`bootstrap.ensure_env()`
 
 ## Kurulum (bir kereye mahsus)
 
-### 0. Projeyi indirin
-
-Sadece **`revit/`** klasorunu (yani `revit/pyKalfa.extension/...`)
-almaniz yeterli -- geri kalan dosyalar (bu README, ROADMAP, `assets/`
-ornekleri) sadece gelistirme/referans amaclidir, calismasi icin gerekli
-degildir. Iki yoldan biriyle edinebilirsiniz:
-
-- **`git clone`** ile (Git kuruluysa): `git clone <repo-url>`
-- **veya** GitHub'da **Code -> Download ZIP** (ya da bir Release
-  sayfasindaki ZIP) ile indirip **zip'i cikartin**.
-
-  GitHub'in olusturdugu zip'i actiginizda icinde `pyKalfa-main`
-  (veya `pyKalfa-v1.0.0` gibi) adinda tek bir ust klasor cikar;
-  `revit/` klasoru onun icindedir.
-
-Nereye cikardiginiz/klonladiginiz veya `revit/` klasorunu sonradan
-baska bir yere tasimaniz onemli degil -- extension kendi konumuna gore
-calisir (sabit bir yol varsaymaz), ve `env/` zaten ayri, sabit bir
-yolda kuruldugu icin (yukariya bakin) hicbir MAX_PATH riski tasimaz.
-
-### 1. pyRevit'i kurun (kurulu degilse)
+### 0. pyRevit'i kurun (kurulu degilse)
 
 pyRevit'in resmi deposu: `github.com/pyrevitlabs/pyRevit` (Releases
 sekmesinden kurulum dosyasini indirebilirsiniz). Kurulumdan sonra
 Revit'i actiginizda ust menude bir **pyRevit** sekmesi gormelisiniz.
 
-### 2. pyKalfa extension'ini pyRevit'e tanitin
+Sisteminizde ayrica bir **Python 3** kurulu olmalidir (python.org;
+kurulum sihirbazinda "Add python.exe to PATH" kutusunu isaretleyin).
 
-1. Revit'te **pyRevit** sekmesi -> disli ikon (**Settings**).
-2. **Custom Extension Folders** bolumune gidin.
-3. **Add Folder** ile, adim 0'da indirdiginiz/cikardiginiz proje
-   klasorunun icindeki `revit` klasorunu secin (ör.
-   `...\pyKalfa-main\revit` veya `...\pyKalfa\revit`,
-   nereye cikardiysaniz -- `pyKalfa.extension` klasorunun bir
-   ustu).
-4. Ayarlari kaydedip pyRevit'i **Reload** edin (veya Revit'i yeniden
-   baslatin).
+### 1. pyKalfa'yi GitHub URL'si ile kurun (onerilen)
+
+1. Revit'te **pyRevit** sekmesi -> **Extensions** (Extension Manager).
+2. Yeni bir extension eklemek icin repo adresini girin:
+   ```
+   https://github.com/cmldk/pyKalfa.git
+   ```
+   Isim olarak `pyKalfa` verin. pyRevit repo'yu klonlayip
+   `pyKalfa.extension` klasoru olarak kaydeder.
+3. pyRevit'i **Reload** edin (veya Revit'i yeniden baslatin).
 
 Bu adimdan sonra **baska hicbir sey yapmaniza gerek yok**: reload/acilis
 sirasinda `startup.py` calisir ve `env/` kurulumunu kendiliginden
 tamamlar (ilk kurulumda birkac dakika surebilir, bkz. yukarida). Kurulum
 bitince ust menude yeni bir **pyKalfa** sekmesi, altinda **Parsel /
 Bina** ve **Duvar** panelleri gorunmelidir.
+
+### 1b. (Alternatif) Elle indirip klasor olarak tanitin
+
+URL ile kurulumu kullanmak istemiyorsaniz (ör. gelistirme yaparken):
+
+1. Repo'yu klonlayin veya **Code -> Download ZIP** ile indirip cikartin.
+2. Klasorun adini **`pyKalfa.extension`** olarak degistirin (pyRevit
+   bir klasoru ancak `.extension` ile bitiyorsa extension olarak tanir).
+3. Bu klasoru, iceren bir UST klasore koyun (ör.
+   `C:\pyRevitExtensions\pyKalfa.extension`).
+4. Revit'te **pyRevit** -> disli ikon (**Settings**) -> **Custom
+   Extension Folders** -> **Add Folder** ile **ust** klasoru secin
+   (ör. `C:\pyRevitExtensions`) -- `.extension` klasorunun kendisini
+   degil, bir ustunu.
+5. Ayarlari kaydedip pyRevit'i **Reload** edin.
 
 Kurulum bu kadar -- bundan sonraki tum kullanim Revit icinden, tek
 butonla yapilir.
@@ -294,15 +296,16 @@ temsil edilir.
 
 | Klasor/Dosya | Icerik |
 | --- | --- |
+| `extension.json` | Extension Manager'in okudugu tanim (isim, aciklama, yazar, repo adresi). |
+| `startup.py` | pyRevit'in extension her yuklemede/reload'da calistirdigi script; `env/` kurulumunu tetikler. |
+| `pyKalfa.tab/` | Sekme; her panel bir islev grubu, her pushbutton bir islev. |
+| `lib/pykalfa/` | Revit tarafi kod: kokunde ortak moduller, `<islev>/` altinda isleve ozel olanlar (asagida detay). |
+| `pysrc/<islev>/` | Islev bazli agir CPython kodu (`parsel_bina/`, `duvar/`; asagida detay). |
+| `requirements.txt` | `pysrc` bagimliliklari (butun islevler icin ortak). |
+| `output/` | Uretilen ara/debug dosyalari (basarili aktarimdan sonra otomatik silinir). |
 | `assets/` | Ornek kadastro goruntuleri (`parsel.png`, `bina.png`) -- sadece referans/deneme icin, calismasi icin sart degil. |
-| `revit/pyKalfa.extension/` | **Kendi kendine yeterli** pyRevit extension'i -- tek basina alinip kullanilabilir. |
-| `.../pyKalfa.tab/` | Sekme; her panel bir islev grubu, her pushbutton bir islev. |
-| `.../lib/pykalfa/` | Revit tarafi kod: kokunde ortak moduller, `<islev>/` altinda isleve ozel olanlar (asagida detay). |
-| `.../pysrc/<islev>/` | Islev bazli agir CPython kodu (`parsel_bina/`, `duvar/`; asagida detay). |
-| `.../requirements.txt` | `pysrc` bagimliliklari (butun islevler icin ortak). |
-| `.../env/` | Python sanal ortami (git'e dahil degil, ilk calistirmada otomatik olusur). |
-| `.../output/` | Uretilen ara/debug dosyalari (basarili aktarimdan sonra otomatik silinir). |
 | `ROADMAP.md` | Proje gelisim gunlugu ve yol haritasi. |
+| `C:\pyKalfa\env\` | Python sanal ortami -- extension'in DISINDA, sabit kisa yolda (git'e dahil degil, ilk acilista otomatik olusur). |
 
 ### `lib/pykalfa/` -- ortak kutuphane
 
@@ -335,10 +338,10 @@ gelistirme amaclidir:
 | `prepare_revit_input.py` | **Asil aractir.** Yukaridakileri birlestirip `output/revit_input.json`'i uretir; pyRevit butonu bunu cagirir. |
 
 Manuel test etmek isterseniz (Revit acmadan, sadece ciktiyi kontrol
-etmek icin), `revit\pyKalfa.extension\` klasorunun icinden:
+etmek icin), repo kokunden:
 
 ```powershell
-env\Scripts\python.exe pysrc\parsel_bina\prepare_revit_input.py --scale 1000 --parsel ..\..\assets\parsel.png --bina ..\..\assets\bina.png
+C:\pyKalfa\env\Scripts\python.exe pysrc\parsel_bina\prepare_revit_input.py --scale 1000 --parsel assets\parsel.png --bina assets\bina.png
 ```
 
 ### `pysrc/duvar/` icindeki scriptler
@@ -351,12 +354,11 @@ env\Scripts\python.exe pysrc\parsel_bina\prepare_revit_input.py --scale 1000 --p
 | `prepare_wall_input.py` | **Asil aractir.** Zinciri calistirip `output/wall_input.json`'i uretir; pyRevit butonu bunu cagirir. |
 | `selftest.py` | Sentetik bir DXF uretip butun zinciri dogrular -- Revit gerekmez. |
 
-Kendi DXF'inizi Revit acmadan denemek icin
-(`revit\pyKalfa.extension\` icinden):
+Kendi DXF'inizi Revit acmadan denemek icin (repo kokunden):
 
 ```powershell
-env\Scripts\python.exe pysrc\duvar\selftest.py
-env\Scripts\python.exe pysrc\duvar\prepare_wall_input.py --dxf C:\yol\plan.dxf --output-dir output
+C:\pyKalfa\env\Scripts\python.exe pysrc\duvar\selftest.py
+C:\pyKalfa\env\Scripts\python.exe pysrc\duvar\prepare_wall_input.py --dxf C:\yol\plan.dxf --output-dir output
 ```
 
 Faydali parametreler: `--units mm|cm|m|in|ft` (birimi elle ver),

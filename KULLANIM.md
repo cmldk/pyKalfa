@@ -21,10 +21,10 @@ detayına kadar anlatır.
 1. Genel Bakış
 2. Bölüm A — İlk Kurulum (Bir Kereye Mahsus)
    - A.1. Python Kurulumu
-   - A.2. Projeyi İndirme
+   - A.2. (İsteğe Bağlı) Projeyi Elle İndirme
    - A.3. Otomatik Kurulum Hakkında
    - A.4. pyRevit Kurulumu
-   - A.5. pyKalfa Extension'ını pyRevit'e Tanıtma
+   - A.5. pyKalfa'yı pyRevit'e Kurma (GitHub adresi ile)
 3. Bölüm B — Günlük Kullanım: Parsel/Bina Aktar
    - B.1. Revit'i Açma ve Doğru View'e Geçme
    - B.2. Butona Basma
@@ -115,40 +115,34 @@ Python kurulu olup olmadığını önce kontrol edin:
 > uzunluğu sınırlamasını kaldırır ve ileride bazı paket kurulumlarında
 > ("dosya adı çok uzun" gibi) çıkabilecek hatalari önler.
 
-### A.2. Projeyi İndirme
+### A.2. (İsteğe Bağlı) Projeyi Elle İndirme
 
-pyKalfa'i iki yoldan biriyle edinebilirsiniz.
+**Çoğu kullanıcı bu adımı atlayabilir.** Adım A.5'te pyKalfa'nın GitHub
+adresini doğrudan pyRevit'e vereceksiniz; pyRevit projeyi kendisi
+indirir. Dolayısıyla önceden bir şey indirmenize gerek yoktur.
 
-**Yöntem 1 — GitHub'dan ZIP indirme (önerilen, Git bilmeyenler için):**
+Bu adım yalnızca, indirmeyi elle yapmak isteyenler içindir (ör. şirket
+ağı GitHub'a doğrudan erişimi engelliyorsa):
 
 1. Tarayıcınızdan proje sayfasına gidin.
-2. Yeşil **"Code"** butonuna (veya bir Release sayfasındaki ZIP linkine)
-   tıklayın.
-3. **"Download ZIP"** seçeneğine tıklayın; dosya `İndirilenler`
-   klasörünüze iner (ör. `pyKalfa-main.zip`).
-4. İndirilen ZIP dosyasına sağ tıklayıp **"Tümünü Çıkart..."**
-   (Extract All) seçeneğini kullanın; istediğiniz bir konuma (ör.
-   `Belgelerim` veya `Masaüstü`) çıkarın.
-5. Çıkan klasörün içine girin — genelde `pyKalfa-main` gibi bir
-   isimle gelir. İçinde `revit`, `assets`, `README.md` gibi klasör/
-   dosyalar görmelisiniz. **Bu klasörün tam yolunu not edin** (ör.
-   `C:\Users\KullaniciAdi\Desktop\pyKalfa-main`) — sonraki
-   adımlarda bu yola ihtiyacınız olacak.
+2. Yeşil **"Code"** butonuna tıklayıp **"Download ZIP"** seçeneğini
+   kullanın; dosya `İndirilenler` klasörünüze iner.
+3. ZIP'e sağ tıklayıp **"Tümünü Çıkart..."** (Extract All) ile
+   çıkartın.
+4. Çıkan klasörün adını **`pyKalfa.extension`** olarak değiştirin —
+   pyRevit bir klasörü ancak adı `.extension` ile bitiyorsa eklenti
+   olarak tanır.
+5. Bu klasörü, onu içeren bir **üst** klasöre koyun. Örnek:
+   ```
+   C:\pyRevitExtensions\pyKalfa.extension
+   ```
+   **Bu üst klasörün yolunu not edin** (`C:\pyRevitExtensions`) —
+   Adım A.5'in alternatif yönteminde bu yola ihtiyacınız olacak.
 
-**Yöntem 2 — Git ile klonlama (Git kuruluysa):**
-
-1. PowerShell açın.
-2. İndirmek istediğiniz klasöre gidin (ör. `cd Desktop`).
-3. Şunu çalıştırın: `git clone <repo-adresi>`
-
-> **Önemli:** Klasörü tercihen **kısa ve sade bir yola** çıkarın/
-> klonlayın (ör. `C:\pyKalfa` veya `Masaüstü\pyKalfa`),
-> iç içe geçmiş çok derin klasörlerden (ör. `Belgelerim\Projeler\2026\
-> Yedek\pyKalfa` gibi) kaçının. Sebebi: kurulum sırasında inen
-> bazı paketlerin (OCR kütüphanesi) kendi iç dosya adları zaten çok
-> uzun; bu, kısa olmayan bir proje yoluyla birleşince Windows'un 260
-> karakterlik dosya yolu sınırını aşıp "dosya adı çok uzun" hatasına
-> yol açabilir (bkz. Bölüm D).
+> **Not:** Projeyi nereye çıkardığınızın bir önemi yok. Kurulum
+> sırasında inen büyük paketler (OCR kütüphanesi) her hâlükârda sabit
+> ve kısa bir yola (`C:\pyKalfa\env`) kurulur, dolayısıyla Windows'un
+> 260 karakterlik dosya yolu sınırına takılmazsınız.
 
 ### A.3. Otomatik Kurulum Hakkında
 
@@ -181,35 +175,41 @@ geçebilirsiniz.
    menüde yeni bir **pyRevit** sekmesi görmelisiniz — görüyorsanız
    kurulum başarılı demektir.
 
-### A.5. pyKalfa Extension'ını pyRevit'e Tanıtma
+### A.5. pyKalfa'yı pyRevit'e Kurma (GitHub adresi ile)
 
-Bu adımda, Adım A.2'de indirdiğiniz klasörün içindeki `revit` alt
-klasörünü pyRevit'e "burada bir eklenti var" diye tanıtacaksınız.
+Bu adımda pyKalfa'nın GitHub adresini pyRevit'e vereceksiniz; pyRevit
+projeyi kendisi indirip kuracak.
 
 1. Revit'i açın (bir proje açık olması gerekmez, boş ekranda da
    yapılabilir).
 2. Üst menüden **pyRevit** sekmesine tıklayın.
-3. pyRevit sekmesinin en solunda/sağında bulunan **dişli çark ikonuna**
-   (⚙, "Settings") tıklayın.
-4. Açılan ayarlar penceresinde **"Custom Extension Folders"** (veya
-   Türkçe arayüzdeyseniz benzer bir başlık) bölümünü bulun.
-5. **"Add Folder"** (Klasör Ekle) butonuna tıklayın.
-6. Açılan klasör seçme penceresinde, Adım A.2'de indirdiğiniz proje
-   klasörünün İÇİNDEKİ **`revit`** klasörünü bulup seçin. Örnek yol:
+3. **Extensions** (Eklenti Yöneticisi) butonuna tıklayın.
+4. Yeni bir eklenti eklemek için açılan pencerede şu adresi girin:
    ```
-   C:\Users\KullaniciAdi\Desktop\pyKalfa-main\revit
+   https://github.com/cmldk/pyKalfa.git
    ```
-   > **Dikkat:** `revit` klasörünün kendisini seçin — bir üstünü
-   > (`pyKalfa-main`) veya bir altını (`pyKalfa.extension`)
-   > değil.
-7. **"Save Settings"** (Ayarları Kaydet) butonuna tıklayın.
-8. pyRevit sekmesindeki **"Reload"** (Yeniden Yükle) butonuna tıklayın.
+   İsim sorulursa `pyKalfa` yazın.
+5. pyRevit projeyi indirip `pyKalfa.extension` adıyla kaydeder.
+6. pyRevit sekmesindeki **"Reload"** (Yeniden Yükle) butonuna tıklayın.
    (Bulamazsanız Revit'i tamamen kapatıp yeniden açmak da aynı işi
    görür.)
-9. Birkaç saniye bekleyin. Üst menüde artık yeni bir
-   **pyKalfa** sekmesi görmelisiniz. Bu sekmeye tıklayınca
-   **Parsel / Bina** adında bir panel ve içinde **"Parsel/Bina Aktar"**
-   yazılı, ikonlu bir buton görmelisiniz.
+7. **İlk kurulumda burada birkaç dakika beklersiniz** — Bölüm B.3'te
+   anlatılan otomatik ortam kurulumu bu sırada çalışır. Bir ilerleme
+   çubuğu görürsünüz.
+8. Kurulum bitince üst menüde yeni bir **pyKalfa** sekmesi
+   görmelisiniz. Bu sekmeye tıklayınca **Parsel / Bina** ve **Duvar**
+   adında paneller ve içlerinde ikonlu butonlar görmelisiniz.
+
+**Alternatif — elle indirdiyseniz (Adım A.2):**
+
+1. **pyRevit** sekmesi → **dişli çark ikonu** (⚙, "Settings").
+2. **"Custom Extension Folders"** bölümünü bulun.
+3. **"Add Folder"** ile, `pyKalfa.extension` klasörünü **içeren üst
+   klasörü** seçin (ör. `C:\pyRevitExtensions`).
+   > **Dikkat:** `pyKalfa.extension` klasörünün **kendisini değil**,
+   > bir üstünü seçin. pyRevit, verdiğiniz klasörün içinde `.extension`
+   > ile biten klasörleri arar.
+4. **"Save Settings"** ile kaydedip **"Reload"** edin.
 
 **Kurulum bu kadar!** Bu adımdan sonra bir daha Bölüm A'ya dönmenize
 gerek yoktur. Aşağıdaki Bölüm B, aracı her kullanmak istediğinizde
