@@ -57,6 +57,10 @@ répète pas aux démarrages suivants.
 5. La géométrie est dessinée, puis un résumé des éléments créés
    s'affiche.
 
+> Des images d'exemple se trouvent dans le dossier `assets/`
+> (`parsel_500.png`, `bina_500.png`) ; vos propres images doivent leur
+> ressembler.
+
 > Les numéros de parcelles sont lus par OCR, avec une précision
 > d'environ 80 %. Des caractères proches (G/6, A/4, B/8, S/5) peuvent
 > être confondus : comparez le résultat avec l'image source et corrigez

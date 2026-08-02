@@ -53,6 +53,9 @@ Sonraki açılışlarda kurulum tekrarlanmaz.
    sorulmaz.
 5. Geometri çizilir ve kaç eleman oluştuğunu gösteren özet açılır.
 
+> Örnek görseller `assets/` klasöründedir (`parsel_500.png`,
+> `bina_500.png`); kendi görselleriniz bunlara benzer olmalıdır.
+
 > Parsel numaraları OCR ile okunur, doğruluk ~%80'dir. Benzer
 > karakterler (G/6, A/4, B/8, S/5) karışabilir; sonucu kaynak görselle
 > karşılaştırıp gerekirse elle düzeltin.

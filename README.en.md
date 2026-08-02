@@ -53,6 +53,9 @@ shows a progress bar. It does not run again on later startups.
    anything during this step.
 5. The geometry is drawn and a summary of created elements appears.
 
+> Sample images are in the `assets/` folder (`parsel_500.png`,
+> `bina_500.png`); your own images should look like these.
+
 > Parcel numbers are read with OCR, which is about 80% accurate. Similar
 > characters (G/6, A/4, B/8, S/5) may be confused — compare the result
 > with the source image and correct it manually if needed.
