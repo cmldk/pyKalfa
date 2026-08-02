@@ -7,14 +7,17 @@ Butun islevler ayni duzeni paylasir:
       lib/pykalfa/        <- bu paket (Revit tarafi, IronPython)
       pyKalfa.tab/        <- panel/buton tanimlari
       pysrc/<islev>/      <- islev bazli CPython kodu (venv icinde calisir)
-      env/                <- butun islevlerin paylastigi sanal ortam
       output/             <- gecici ara dosyalar (her calistirmada yeniden uretilir)
-      requirements.txt    <- env/ icin bagimliliklar
+      requirements.txt    <- ortak sanal ortam (env/) icin bagimliliklar
 
 Yollar bu modulun KENDI konumundan turetilir (`lib/pykalfa/paths.py` ->
 uc ust klasor extension kokudur); boylece hicbir buton, kac klasor
 derinde oldugunu bilmek zorunda kalmaz ve extension tasinsa/yeniden
 adlandirilsa da yollar bozulmaz.
+
+Istisna `env/`: MAX_PATH sorunlarindan kacinmak icin extension'in
+ICINDE DEGIL, sabit bir sistem yolunda tutulur -- bkz. `python_exe()` ve
+`installer.env_location`.
 """
 
 import os
@@ -33,9 +36,16 @@ def extension_root():
 def python_exe():
     """Ortak sanal ortamin (`env/`) CPython yorumlayicisi.
 
+    `env/`, extension'in kendi klasorunun ICINDE DEGIL, sabit ve kisa bir
+    sistem yolunda tutulur (bkz. `installer.env_location`) -- boylece
+    extension GitHub'dan ne kadar derin bir yola klonlanirsa klonlansin,
+    pip'in kurdugu paketler (ör. OCR kutuphanesi) Windows'un 260 karakter
+    MAX_PATH sinirina takilmaz.
+
     Var olup olmadigi KONTROL EDILMEZ; ilk calistirmada henuz kurulmamis
-    olabilir (bkz. `bootstrap.ensure_env`)."""
-    return os.path.join(EXTENSION_ROOT, "env", "Scripts", "python.exe")
+    olabilir (bkz. `installer.orchestrator.ensure_installed`)."""
+    from pykalfa.installer import env_location
+    return env_location.python_exe_path()
 
 
 def requirements_file():

@@ -22,18 +22,24 @@ kendi kendine yeterli sekilde durur:
 
 ```
 revit/pyKalfa.extension/
+  startup.py                   <- pyRevit'in extension her yuklemede/reload'da CALISTIRDIGI script
   pyKalfa.tab/                 <- sekme; her panel/buton burada
     ParselBina.panel/ImportGeometry.pushbutton/script.py   <- SADECE bu islevin akisi
     Duvar.panel/DuvarAktar.pushbutton/script.py
   lib/pykalfa/                 <- Revit (IronPython) tarafi
     paths, subproc, bootstrap, revitutils, selectors        <- ortak
+    installer/                 <- env kurulumu (bkz. asagida)
     duvar/ui.py, duvar/revit_creator.py                     <- isleve ozel
   pysrc/                       <- islev bazli agir CPython kodu
     parsel_bina/               <- goruntu isleme (cv2/numpy/scikit-image)
     duvar/                     <- DXF okuma/temizleme (ezdxf)
   requirements.txt             <- pysrc'nin bagimliliklari (ortak)
-  env/                         <- Python sanal ortami (ilk calistirmada otomatik olusur)
   output/                      <- gecici ara dosyalar (ortak)
+
+C:\pyKalfa\                    <- Python sanal ortami BURADA (extension'in DISINDA), bkz. asagida
+  env/
+  install.json
+  install.log
 ```
 
 Iki ayri calisma ortami var ama ikisi de bu TEK klasorun icinde:
@@ -55,29 +61,41 @@ gibi tekrar eden isler `lib/pykalfa/` altindadir. Bir isleve ozel ama
 Duvar Aktar'in diyaloglari ve duvar olusturma dongusu)
 `lib/pykalfa/<islev>/` altina konur.
 
-Bir islevin sadece Revit API'sine ihtiyaci varsa `pysrc/` ve `env/`
-tarafina hic dokunmadan calisabilir -- agir ortam kurulumu buton
-basinda degil, ihtiyac aninda (`bootstrap.ensure_env()`) tetiklenir.
-
 **Onemli:** Bu iki asamayi ayri ayri calistirmaniza gerek yok. pyRevit
 butonu, goruntu isleme asamasini kendisi otomatik olarak (arka planda,
-kendi `env/` sanal ortamini kullanarak) tetikler. Gunluk kullanimda
-hicbir Python komutu yazmaniz gerekmez -- sadece Revit icinde bir
-butona basarsiniz.
+`env/` sanal ortamini kullanarak) tetikler. Gunluk kullanimda hicbir
+Python komutu yazmaniz gerekmez -- sadece Revit icinde bir butona
+basarsiniz.
 
 **Tek klasoru alip kullanmaya baslayabilirsiniz.** `revit/` klasorunun
 disinda (`assets/` haric) hicbir seye bagimli degildir -- baska bir
 projeye/bilgisayara tasisaniz da (repo'nun geri kalanini almasaniz da)
 calismaya devam eder.
 
-**`env/` sanal ortami da otomatik kurulur.** Butona ilk kez
-bastiginizda, `env/` klasoru henuz yoksa script bunu fark edip
-kendisi sistemde bir Python bulur (`py`/`python`), `env/` sanal
-ortamini olusturur ve `requirements.txt`'i kurar -- bu birkac dakika
-surebilir, bir bilgi penceresi cikar, kapatinca islem otomatik devam
-eder. Yani **elle kurulum yapmaniza gerek yoktur**; tek onkosul,
-sisteminizde herhangi bir Python 3 kurulu olmasidir (yoksa python.org
-uzerinden kurmaniz istenir).
+**`env/` sanal ortami tamamen otomatik kurulur, elle hicbir sey
+calistirmaniza gerek yoktur.** Extension'in kokunde bulunan
+`startup.py`, pyRevit tarafindan extension her yuklendiginde/reload
+edildiginde (yani Revit'i actiginizda) otomatik calistirilir: sistemde
+bir Python bulur (`py`/`python`), sabit bir sistem yolunda
+(`C:\pyKalfa\env`) sanal ortami olusturur ve `requirements.txt`'i
+kurar. Ilk kurulumda bu birkac dakika surebilir (bir bilgi penceresi
+cikar, o sure boyunca pyRevit'in bu extension'i yuklemesi bekler);
+sonraki her Revit acilisinda `env/` zaten guncel oldugu icin bu kontrol
+aninda biter. Tek onkosul, sisteminizde herhangi bir Python 3 kurulu
+olmasidir (yoksa python.org uzerinden kurmaniz istenir).
+
+`env/`'in extension'in kendi klasorunun **disinda**, sabit ve kisa bir
+yolda (`C:\pyKalfa`) tutulmasinin sebebi: pip'in kurdugu bazi
+paketlerin (ör. OCR kutuphanesi) kendi ic dosya adlari zaten cok
+derin/uzun; extension'i GitHub'dan ne kadar derin bir yola
+klonlarsaniz klonlayin (ör. `Belgelerim\Projeler\...`), `env/` her
+zaman kisa bir yolda oldugu icin Windows'un 260 karakterlik dosya yolu
+sinirina (`WinError 206`) hic takilmazsiniz.
+
+Eger `startup.py` herhangi bir sebeple calismadiysa (ör. cok eski bir
+pyRevit surumu) veya `C:\pyKalfa\env` klasoru sonradan silindiyse, ilk
+buton tiklamasi ayni kurulumu kendisi tamamlar (`bootstrap.ensure_env()`
+-- guvenlik agi).
 
 > **Not (boyut/sure):** parsel numara etiketlerini okumak icin
 > kullanilan OCR kutuphanesi (`easyocr`) PyTorch'a bagimlidir ve
@@ -104,47 +122,16 @@ degildir. Iki yoldan biriyle edinebilirsiniz:
 
 Nereye cikardiginiz/klonladiginiz veya `revit/` klasorunu sonradan
 baska bir yere tasimaniz onemli degil -- extension kendi konumuna gore
-calisir (sabit bir yol varsaymaz).
+calisir (sabit bir yol varsaymaz), ve `env/` zaten ayri, sabit bir
+yolda kuruldugu icin (yukariya bakin) hicbir MAX_PATH riski tasimaz.
 
-Butonu ilk kez calistirdiginizda `env/` otomatik kurulur (asagiya
-bakin) -- normalde adim 1'i elle yapmaniza gerek yoktur. Yine de
-isterseniz onceden, elle de kurabilirsiniz:
-
-### 1. (Istege bagli) Python bagimliliklarini elle onceden kurun
-
-`revit/pyKalfa.extension/` klasorune girip `setup.ps1` scriptini
-calistirin:
-
-```powershell
-cd revit\pyKalfa.extension
-.\setup.ps1
-```
-
-Bu script:
-- ayni klasorde `env/` adinda bir Python sanal ortami olusturur (yoksa),
-- `requirements.txt` icindeki paketleri (`opencv-python-headless`,
-  `numpy`, `scikit-image`) bu ortama kurar.
-
-Veya tamamen elle (yine `pyKalfa.extension/` klasorunun icinde):
-
-```powershell
-python -m venv env
-env\Scripts\pip.exe install -r requirements.txt
-```
-
-> Not: bir venv'i olusturuldugu yerden baska bir klasore tasimayin --
-> icindeki `pip`/`python` baslatici dosyalari mutlak yol icerir ve
-> tasinunca bozulur. Konum degistirmeniz gerekirse `env/` klasorunu
-> silip yeniden olusturun (veya sadece butonu calistirin, otomatik
-> yeniden kurar).
-
-### 2. pyRevit'i kurun (kurulu degilse)
+### 1. pyRevit'i kurun (kurulu degilse)
 
 pyRevit'in resmi deposu: `github.com/pyrevitlabs/pyRevit` (Releases
 sekmesinden kurulum dosyasini indirebilirsiniz). Kurulumdan sonra
 Revit'i actiginizda ust menude bir **pyRevit** sekmesi gormelisiniz.
 
-### 3. pyKalfa extension'ini pyRevit'e tanitin
+### 2. pyKalfa extension'ini pyRevit'e tanitin
 
 1. Revit'te **pyRevit** sekmesi -> disli ikon (**Settings**).
 2. **Custom Extension Folders** bolumune gidin.
@@ -155,8 +142,12 @@ Revit'i actiginizda ust menude bir **pyRevit** sekmesi gormelisiniz.
    ustu).
 4. Ayarlari kaydedip pyRevit'i **Reload** edin (veya Revit'i yeniden
    baslatin).
-5. Ust menude yeni bir **pyKalfa** sekmesi, altinda **Parsel / Bina** ve
-   **Duvar** panelleri gorunmelidir.
+
+Bu adimdan sonra **baska hicbir sey yapmaniza gerek yok**: reload/acilis
+sirasinda `startup.py` calisir ve `env/` kurulumunu kendiliginden
+tamamlar (ilk kurulumda birkac dakika surebilir, bkz. yukarida). Kurulum
+bitince ust menude yeni bir **pyKalfa** sekmesi, altinda **Parsel /
+Bina** ve **Duvar** panelleri gorunmelidir.
 
 Kurulum bu kadar -- bundan sonraki tum kullanim Revit icinden, tek
 butonla yapilir.
@@ -428,7 +419,7 @@ kalsin.
 | Belirti | Olasi neden / cozum |
 | --- | --- |
 | Buton "Aktif view bir plan/detay/kesit/cephe view'i olmali" diyor | 3D view'desiniz; bir plan/detay/kesit/cephe view'ine gecip tekrar deneyin. |
-| "Ilk calistirma: ortam kuruluyor..." uzun suruyor / sonra hata veriyor | Ilk buton tiklamasinda `env/` otomatik kuruluyor (internet baglantisi gerekir, birkac dakika surebilir). "Otomatik kurulum basarisiz oldu" hatasi alirsaniz: sisteminizde Python 3 kurulu oldugundan emin olun, veya `revit\pyKalfa.extension\` klasorunde elle `.\setup.ps1` calistirip tekrar deneyin. |
+| "pyKalfa ilk kurulum/guncelleme yapiliyor..." uzun suruyor / sonra hata veriyor | `env/` kurulumu Revit acilirken/pyRevit reload edilirken `startup.py` tarafindan otomatik yapiliyor (internet baglantisi gerekir, birkac dakika surebilir). "pyKalfa otomatik kurulumu basarisiz oldu" hatasi alirsaniz: sisteminizde Python 3 kurulu oldugundan emin olun (python.org, "Add python.exe to PATH" isaretli), ayrinti icin `C:\pyKalfa\install.log` dosyasina bakin, sonra Revit'i yeniden baslatin. |
 | "Goruntu isleme basarisiz oldu" (stdout/stderr ile) | Popup'taki hata metnini okuyun -- genelde yanlis dosya yolu veya gecersiz olcek degeridir. |
 | "Projede tanimli bir line style / Filled Region Type / Text Note Type bulunamadi" | Revit projenizde en az bir ozel "Lines" alt kategorisi, bir Filled Region Type ve (etiket varsa) bir Text Note Type tanimli olmali (Manage > Object Styles / Additional Settings). |
 | Sonuc gorsel olarak beklenmedik (ççift cizgi, eksik parsel vb.) | `output/revit_input_preview.png`'yi (hata sonrasi kalirsa) acip kontrol edin; `ROADMAP.md`'deki "bilinen sinirlar" bolumune bakin. |
