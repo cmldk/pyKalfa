@@ -75,9 +75,77 @@ def build_parcel_line_mask(image_path: Path) -> tuple[np.ndarray, np.ndarray]:
     return image, skeleton
 
 
+def _perimeter_coords(height: int, width: int) -> list[tuple[int, int]]:
+    """Goruntu cercevesinin piksellerini saat yonunde, dongusel bir dizi
+    olarak dondurur (sol-ust kosede baslar). Kapanmamis sekilleri cerceve
+    boyunca kapatirken "iki degme noktasi arasindaki yol" bu dizi uzerinde
+    aranir."""
+    top = [(x, 0) for x in range(width)]
+    right = [(width - 1, y) for y in range(1, height)]
+    bottom = [(x, height - 1) for x in range(width - 2, -1, -1)]
+    left = [(0, y) for y in range(height - 2, 0, -1)]
+    return top + right + bottom + left
+
+
+def close_shapes_at_frame(mask: np.ndarray) -> np.ndarray:
+    """Goruntu kenarinda kesilmis bina konturlarini goruntunun cercevesiyle
+    kapatir.
+
+    Kadastro kesiti bir binanin ortasindan gectiginde o binanin cizgisi
+    goruntu icinde kapanmaz; geriye "U" bicimli acik bir seritt kalir.
+    `RETR_EXTERNAL` boyle bir serittin cevresini izledigi icin bina alani
+    yerine cizgi kalinligi kadar ince, anlamsiz bir bolge uretir (ornek
+    goruntude 46 konturun 11'i boyleydi, doluluk oranlari 0.05-0.45).
+
+    Cozum: her bilesenin cerceveye DEGDIGI noktalar arasindaki cerceve
+    parcasi maskeye eklenir; boylece sekil goruntu siniri boyunca kapanir
+    ve dis hatti gercek bina alanini verir. Bilesenin cerceve uzerindeki
+    ardisik degme noktalari arasinda kalan bosluklardan EN GENISI atlanir:
+    o bosluk seklin disinda kalan (goruntunun geri kalanini dolasan)
+    taraftir, doldurulursa sekil degil butun cerceve dolar.
+
+    Araya baska bir bilesenin degme noktasi giren bosluklar da atlanir --
+    aksi halde cerceve boyunca komsu iki bina tek bir bolgeye yapisirdi.
+    """
+    height, width = mask.shape
+    perimeter = _perimeter_coords(height, width)
+    xs = np.array([p[0] for p in perimeter])
+    ys = np.array([p[1] for p in perimeter])
+
+    num_labels, labels = cv2.connectedComponents((mask > 0).astype(np.uint8), connectivity=8)
+    perimeter_labels = labels[ys, xs]  # her cerceve pikselinin bileseni (0 = bos)
+
+    closed = mask.copy()
+    total = len(perimeter)
+    for label_id in range(1, num_labels):
+        touches = np.flatnonzero(perimeter_labels == label_id)
+        if touches.size < 2:
+            continue  # cerceveye hic degmiyor ya da tek noktada siyiriyor
+
+        # Ardisik degme noktalari arasindaki dongusel bosluklar: (a, b) -> a+1..b-1
+        gaps = list(zip(touches, np.append(touches[1:], touches[0] + total)))
+        widest = max(range(len(gaps)), key=lambda i: gaps[i][1] - gaps[i][0])
+
+        for i, (start, end) in enumerate(gaps):
+            if i == widest or end - start <= 1:
+                continue
+            span = [(start + k) % total for k in range(1, end - start)]
+            if any(perimeter_labels[s] not in (0, label_id) for s in span):
+                continue
+            for s in span:
+                x, y = perimeter[s]
+                closed[y, x] = 255
+    return closed
+
+
 def extract_buildings(image_path: Path) -> tuple[np.ndarray, list[np.ndarray]]:
-    """Her bina icin tek (dis hat) kapali kontur dondurur -> FilledRegion'a hazir."""
+    """Her bina icin tek (dis hat) kapali kontur dondurur -> FilledRegion'a hazir.
+
+    Goruntu kenarinda kesilmis binalar once cerceveyle kapatilir (bkz.
+    `close_shapes_at_frame`), yoksa dis hatlari bina alanini degil cizgi
+    seridini cevirir."""
     image, mask = build_line_mask(image_path)
+    mask = close_shapes_at_frame(mask)
     contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
     return image, _filter_contours(contours)
 
