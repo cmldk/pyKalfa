@@ -39,6 +39,14 @@ shows a progress bar. It does not run again on later startups.
 
 ### Parsel/Bina Aktar — parcels and buildings
 
+| Input: parcels | Input: buildings | Output: Revit |
+| :---: | :---: | :---: |
+| ![Parcel image](assets/parsel_500.png) | ![Building image](assets/bina_500.png) | ![Revit output](assets/output_revit_img.png) |
+
+Your own images should look like these examples in `assets/`: two layers
+of the same cadastral extract, at the **same pixel size**, with the
+scale bar visible.
+
 1. Switch to a **plan, detail, section or elevation** view (it does not
    work in 3D views).
 2. **pyKalfa** → **Parsel / Bina** → **Parsel/Bina Aktar**.
@@ -47,14 +55,14 @@ shows a progress bar. It does not run again on later startups.
    - select the building image (PNG)
    - enter the map scale denominator (`500` for 1:500)
    - pick a **Line Style** for parcel boundaries
+   - pick a separate **Line Style** for the drawing frame (the outer
+     border of the image) — choose the *"Cerceve cizme"* entry at the
+     top of the list if you do not want a frame
    - pick a **Filled Region Type** for buildings
    - pick a **Text Note Type** for parcel numbers
 4. Image processing runs behind a progress bar; you are not asked
    anything during this step.
 5. The geometry is drawn and a summary of created elements appears.
-
-> Sample images are in the `assets/` folder (`parsel_500.png`,
-> `bina_500.png`); your own images should look like these.
 
 > Parcel numbers are read with OCR, which is about 80% accurate. Similar
 > characters (G/6, A/4, B/8, S/5) may be confused — compare the result

@@ -37,6 +37,7 @@ MIN_POINT_SPACING_M = 0.1    # bu mesafenin altindaki ardisik noktalar birlestir
                               # olusmasin diye -- boylesi otomasyonlarda Revit'i
                               # kararsizlastirip cokertebiliyor)
 
+FRAME_COLOR = (120, 120, 120)    # BGR - gri
 PARCEL_COLOR = (0, 140, 255)     # BGR - turuncu
 BUILDING_COLOR = (255, 120, 0)   # BGR - mavi
 MATCHED_FILL = (0, 200, 0)
@@ -108,6 +109,22 @@ def _parcel_lines_to_real_world(
         for i in range(len(vertices_ft) - 1):
             segments.append([vertices_ft[i], vertices_ft[i + 1]])
     return segments
+
+
+def _image_frame_lines(width: int, height: int, feet_per_px: float) -> list[list[list[float]]]:
+    """Goruntunun dis sinirini 4 segmentlik kapali bir dikdortgen olarak
+    dondurur (parcel_lines ile ayni segment bicimi).
+
+    Butun koordinatlar zaten bu goruntu cercevesine gore uretiliyor
+    (orijin = goruntunun sol-alt kosesi), yani bu dikdortgen kadastro
+    kesitinin tamamini -- goruntu kenarina degen parseller dahil -- tam
+    olarak cevreler. Revit'te bu segmentler ayri bir line style ile
+    cizilerek cizime bir pafta cercevesi verilir.
+    """
+    w = round(width * feet_per_px, 3)
+    h = round(height * feet_per_px, 3)
+    corners = [[0.0, 0.0], [w, 0.0], [w, h], [0.0, h]]
+    return [[corners[i], corners[(i + 1) % 4]] for i in range(4)]
 
 
 def _labels_to_real_world(
@@ -206,6 +223,7 @@ def prepare(
     _progress(55, "Parsel çizgileri izleniyor")
     _, raw_parcel_lines = extract_parcel_lines(parsel_path)
     parcel_lines = _parcel_lines_to_real_world(raw_parcel_lines, meters_per_px, feet_per_px, height)
+    frame_lines = _image_frame_lines(width, height, feet_per_px)
 
     label_records: list[dict] = []
     raw_labels: list[dict] = []
@@ -234,6 +252,8 @@ def prepare(
         "parcel_line_count": len(parcel_lines),
         "parcel_lines_note": "DetailLine cizimi icin kullanilacak segment listesi; iskelet grafigi dogrudan izlenerek uretildigi icin her fiziksel cizgi (komsu parsellerin ortak siniri dahil) tam bir kez yer alir.",
         "parcel_lines": parcel_lines,
+        "frame_lines_note": "Goruntunun dis sinirini olusturan 4 segment (kapali dikdortgen); Revit'te cizimi cerceveleyen ayri bir line style ile cizilir.",
+        "frame_lines": frame_lines,
         "label_count": len(label_records),
         "labels_note": "Parsel numara etiketleri (OCR ile okundu, ör. '591G'). 'confidence' (0-1) dusukse (<~0.5) okuma yanlis olabilir -- G/6, A/4, B/8, S/5 gibi benzer karakterler karisabiliyor. OCR basarisiz/atlandiysa bu liste bostur.",
         "labels": label_records,
@@ -246,6 +266,7 @@ def prepare(
 
     # --- Gorsel dogrulama (fiilen Revit'e gidecek parcel_lines ile ayni kaynak) ---
     canvas = np.full((height, width, 3), 255, dtype=np.uint8)
+    cv2.rectangle(canvas, (0, 0), (width - 1, height - 1), FRAME_COLOR, LINE_THICKNESS)
     for polyline in raw_parcel_lines:
         pts = np.array(polyline, dtype=np.int32).reshape(-1, 1, 2)
         cv2.polylines(canvas, [pts], False, PARCEL_COLOR, LINE_THICKNESS)

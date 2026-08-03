@@ -32,7 +32,7 @@ def unwrap_selection(value):
     return value
 
 
-def pick_by_name(elements, title, empty_message, optional=False):
+def pick_by_name(elements, title, empty_message, optional=False, skip_label=None):
     """Verilen elemanlari adlarina gore listeleyip birini sectirir.
 
     Hic eleman yoksa veya kullanici diyalogu iptal ederse scripti
@@ -41,21 +41,34 @@ def pick_by_name(elements, title, empty_message, optional=False):
     `optional=True` ise, projede hic uygun eleman YOKSA hata verip
     cikmak yerine None doner. Zorunlu olmayan bir secim icin (ör. sadece
     OCR bir etiket okursa gerekecek metin tipi) projeyi bastan reddetmek
-    dogru olmaz -- o durumda islevin geri kalani calisabilmelidir."""
+    dogru olmaz -- o durumda islevin geri kalani calisabilmelidir.
+
+    `skip_label` verilirse listenin basina bu metin eklenir ve secilirse
+    None doner: cizilmesi tamamen kullaniciya kalmis bir sey icin (ör.
+    cerceve) "istemiyorum" da bir cevaptir. Diyalogu IPTAL etmekten
+    farkli -- iptal butun islemi durdurur, bu secenek sadece o parcayi
+    atlar. Ayri bir evet/hayir diyalogu eklemek yerine boyle yapilir:
+    akis butun girdileri pesi sira, tek tur soruyla topluyor."""
     by_name = {elem_name(el): el for el in elements}
     logger.info("{}: {} secenek bulundu.".format(title, len(by_name)))
     if not by_name:
-        if optional:
+        if optional or skip_label:
             logger.info("{}: proje bos, atlaniyor.".format(title))
             return None
         forms.alert(empty_message, exitscript=True)
 
+    options = sorted(by_name.keys())
+    if skip_label:
+        options.insert(0, skip_label)
+
     chosen_name = unwrap_selection(
-        forms.SelectFromList.show(sorted(by_name.keys()), title=title, multiselect=False)
+        forms.SelectFromList.show(options, title=title, multiselect=False)
     )
     logger.info("Secilen: {}".format(chosen_name))
     if not chosen_name:
         script.exit()
+    if skip_label and chosen_name == skip_label:
+        return None
     return by_name[chosen_name]
 
 
@@ -72,11 +85,12 @@ def line_styles(doc):
     ]
 
 
-def pick_line_style(doc, title="Line style secin"):
+def pick_line_style(doc, title="Line style secin", skip_label=None):
     return pick_by_name(
         line_styles(doc),
         title,
         "Projede tanimli bir line style (Lines alt kategorisi) bulunamadi.",
+        skip_label=skip_label,
     )
 
 

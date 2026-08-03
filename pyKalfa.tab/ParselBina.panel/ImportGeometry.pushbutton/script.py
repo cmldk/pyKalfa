@@ -20,8 +20,10 @@ kullanici beklemenin ortasinda soruyla karsilasmaz. Alt-surec
 `PROGRESS|yuzde|mesaj` satirlari basar; cubuk bunlara gore ilerler.
 
 Parsel sinirlari: her segment ayri bir DetailCurve (LineStyle projeden
-secilir). Bina: her biri ayri bir FilledRegion (FilledRegionType projeden
-secilir). Parsel numara etiketleri (ör. "591G", OCR ile okunur): her biri
+secilir). Goruntunun dis siniri (cerceve) ayrica, parsel cizgilerinden
+FARKLI bir line style ile 4 DetailCurve olarak cizilir -- boylece cizim
+Revit'e cerceveli gider; kullanici istemezse bu adim atlanabilir. Bina:
+her biri ayri bir FilledRegion (FilledRegionType projeden secilir). Parsel numara etiketleri (ör. "591G", OCR ile okunur): her biri
 ayri bir TextNote (TextNoteType projeden secilir), okunan dönüş acisina
 gore dondurulur. Ucu de proje icinde ONCEDEN VAR OLAN stiller arasindan,
 script calisirken secilir -- hicbir isim koda gomulmez (proje sablonuna
@@ -71,6 +73,10 @@ MIN_SEGMENT_LENGTH_FT = 0.05
 # `pysrc/` altindaki bu islevin klasoru.
 FEATURE = "parsel_bina"
 
+# Cerceve line style listesinin basina eklenen "cizme" secenegi (bkz.
+# selectors.pick_by_name'deki `skip_label`).
+NO_FRAME_LABEL = "-- Cerceve cizme --"
+
 doc = revit.doc
 view = revit.active_view
 
@@ -118,6 +124,14 @@ except ValueError:
 try:
     chosen_line_style = selectors.pick_line_style(
         doc, title="Parsel cizgileri icin line style secin"
+    )
+    # Cerceve = goruntunun dis siniri. Parsel cizgilerinden ayri bir style
+    # sorulur (pafta cercevesi genelde farkli/kalin bir kalemdir); cerceve
+    # istemeyen kullanici icin liste basinda NO_FRAME_LABEL secenegi var.
+    chosen_frame_style = selectors.pick_line_style(
+        doc,
+        title="Cizim cercevesi (goruntunun dis siniri) icin line style secin",
+        skip_label=NO_FRAME_LABEL,
     )
     chosen_region_type = selectors.pick_filled_region_type(
         doc, title="Binalar icin filled region tipi secin"
@@ -236,8 +250,39 @@ if labels and chosen_text_note_type is None:
 # --- Geometri olusturma -----------------------------------------------------
 level_elevation = view_elevation(view)
 
+
+def draw_segments(segments, line_style, what):
+    """[p1, p2] nokta ciftlerini birer DetailCurve olarak cizer.
+
+    Hem parsel cizgileri hem cerceve ayni sekilde cizilir, sadece line
+    style (ve loga yazilan ad) degisir. `(olusturulan, atlanan)` doner."""
+    created = 0
+    skipped = 0
+    for i, (p1, p2) in enumerate(segments):
+        if distance(p1, p2) < MIN_SEGMENT_LENGTH_FT:
+            skipped += 1
+            continue
+        try:
+            line = Line.CreateBound(
+                XYZ(p1[0], p1[1], level_elevation), XYZ(p2[0], p2[1], level_elevation)
+            )
+        except Exception as ex:
+            logger.debug("{} segment {} atlandi: {}".format(what, i, ex))
+            skipped += 1
+            continue
+        detail_curve = doc.Create.NewDetailCurve(view, line)
+        try:
+            detail_curve.LineStyle = line_style
+        except Exception as ex:
+            logger.debug("LineStyle atanamadi: {}".format(ex))
+        created += 1
+    return created, skipped
+
+
 created_lines = 0
 skipped_lines = 0
+created_frame_lines = 0
+skipped_frame_lines = 0
 created_regions = 0
 skipped_regions = 0
 created_labels = 0
@@ -252,24 +297,16 @@ try:
     # parcel_lines: iskelet grafigi dogrudan izlenerek uretildigi icin her
     # fiziksel cizgi (komsu parsellerin ortak siniri dahil) tam bir kez
     # yer alir (bkz. geometry.py: extract_parcel_lines).
-    for i, (p1, p2) in enumerate(data["parcel_lines"]):
-        if distance(p1, p2) < MIN_SEGMENT_LENGTH_FT:
-            skipped_lines += 1
-            continue
-        try:
-            line = Line.CreateBound(
-                XYZ(p1[0], p1[1], level_elevation), XYZ(p2[0], p2[1], level_elevation)
-            )
-        except Exception as ex:
-            logger.debug("Parsel segment {} atlandi: {}".format(i, ex))
-            skipped_lines += 1
-            continue
-        detail_curve = doc.Create.NewDetailCurve(view, line)
-        try:
-            detail_curve.LineStyle = chosen_line_style
-        except Exception as ex:
-            logger.debug("LineStyle atanamadi: {}".format(ex))
-        created_lines += 1
+    created_lines, skipped_lines = draw_segments(
+        data["parcel_lines"], chosen_line_style, "Parsel"
+    )
+
+    # Cerceve: goruntunun dis siniri (4 segment). Butun koordinatlar bu
+    # cerceveye gore uretildigi icin cizimin tamamini tam olarak cevreler.
+    if chosen_frame_style is not None:
+        created_frame_lines, skipped_frame_lines = draw_segments(
+            data.get("frame_lines") or [], chosen_frame_style, "Cerceve"
+        )
 
     for building in data["buildings"]:
         verts = building["vertices_ft"]
@@ -339,10 +376,15 @@ for path in (json_path, preview_path):
     except Exception as ex:
         logger.debug("Gecici dosya silinemedi ({}): {}".format(path, ex))
 
-forms.alert(
-    "Parsel cizgisi: {} olusturuldu, {} atlandi\n"
+summary = "Parsel cizgisi: {} olusturuldu, {} atlandi\n".format(created_lines, skipped_lines)
+if chosen_frame_style is not None:
+    summary += "Cerceve cizgisi: {} olusturuldu, {} atlandi\n".format(
+        created_frame_lines, skipped_frame_lines
+    )
+summary += (
     "Bina (filled region): {} olusturuldu, {} atlandi\n"
     "Parsel etiketi (text): {} olusturuldu, {} atlandi".format(
-        created_lines, skipped_lines, created_regions, skipped_regions, created_labels, skipped_labels
+        created_regions, skipped_regions, created_labels, skipped_labels
     )
 )
+forms.alert(summary)
