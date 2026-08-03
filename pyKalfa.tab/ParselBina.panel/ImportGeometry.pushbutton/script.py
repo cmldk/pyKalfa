@@ -77,6 +77,9 @@ FEATURE = "parsel_bina"
 # selectors.pick_by_name'deki `skip_label`).
 NO_FRAME_LABEL = "-- Cerceve cizme --"
 
+# Ayni sekilde kuzey oku sembolu icin.
+NO_NORTH_LABEL = "-- Kuzey oku ekleme --"
+
 doc = revit.doc
 view = revit.active_view
 
@@ -144,6 +147,14 @@ try:
         doc,
         title="Parsel etiketleri (ör. '591G') icin text note tipi secin",
         optional=True,
+    )
+    # Kaynak goruntudeki kuzey oku sadece bir sagolcumdur ve geometriye
+    # dahil edilmez; ama yonu olculup projenin KENDI kuzey oku sembolu
+    # ayni yone cevrilerek yerlestirilebilir.
+    chosen_north_symbol = selectors.pick_annotation_symbol(
+        doc,
+        title="Kuzey oku icin aciklama sembolu (annotation symbol) secin",
+        skip_label=NO_NORTH_LABEL,
     )
 except Exception as ex:
     forms.alert(
@@ -287,6 +298,7 @@ created_regions = 0
 skipped_regions = 0
 created_labels = 0
 skipped_labels = 0
+created_north = 0
 
 t = Transaction(doc, "pyKalfa: parsel/bina aktarimi")
 failure_opts = t.GetFailureHandlingOptions()
@@ -357,6 +369,25 @@ try:
             logger.debug("Etiket '{}' olusturulamadi: {}".format(label.get("text"), ex))
             skipped_labels += 1
 
+    # Kuzey oku: kaynak goruntudeki ok geometriye dahil edilmez, sadece
+    # KONUMU ve YONU olculur; buraya projenin kendi sembolu ayni yone
+    # cevrilerek konur.
+    north = data.get("north")
+    if chosen_north_symbol is not None and north:
+        try:
+            if not chosen_north_symbol.IsActive:
+                chosen_north_symbol.Activate()
+                doc.Regenerate()
+            position = XYZ(north["position_ft"][0], north["position_ft"][1], level_elevation)
+            instance = doc.Create.NewFamilyInstance(position, chosen_north_symbol, view)
+            rotation_deg = north.get("rotation_deg") or 0.0
+            if rotation_deg:
+                axis = Line.CreateBound(position, position + XYZ.BasisZ)
+                ElementTransformUtils.RotateElement(doc, instance.Id, axis, math.radians(rotation_deg))
+            created_north = 1
+        except Exception as ex:
+            logger.debug("Kuzey oku yerlestirilemedi: {}".format(ex))
+
     t.Commit()
 except Exception as ex:
     t.RollBack()
@@ -387,4 +418,11 @@ summary += (
         created_regions, skipped_regions, created_labels, skipped_labels
     )
 )
+if chosen_north_symbol is not None:
+    if created_north:
+        summary += "\nKuzey oku: eklendi ({:+.1f} derece)".format(
+            data["north"].get("rotation_deg") or 0.0
+        )
+    else:
+        summary += "\nKuzey oku: goruntude bulunamadi"
 forms.alert(summary)

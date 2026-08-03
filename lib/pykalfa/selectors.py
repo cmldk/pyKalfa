@@ -9,6 +9,7 @@ Bu modul o secim diyaloglarini tek bir yerde toplar.
 
 from Autodesk.Revit.DB import (
     BuiltInCategory,
+    FamilySymbol,
     FilledRegionType,
     FilteredElementCollector,
     GraphicsStyle,
@@ -32,7 +33,7 @@ def unwrap_selection(value):
     return value
 
 
-def pick_by_name(elements, title, empty_message, optional=False, skip_label=None):
+def pick_by_name(elements, title, empty_message, optional=False, skip_label=None, label_fn=None):
     """Verilen elemanlari adlarina gore listeleyip birini sectirir.
 
     Hic eleman yoksa veya kullanici diyalogu iptal ederse scripti
@@ -48,8 +49,14 @@ def pick_by_name(elements, title, empty_message, optional=False, skip_label=None
     cerceve) "istemiyorum" da bir cevaptir. Diyalogu IPTAL etmekten
     farkli -- iptal butun islemi durdurur, bu secenek sadece o parcayi
     atlar. Ayri bir evet/hayir diyalogu eklemek yerine boyle yapilir:
-    akis butun girdileri pesi sira, tek tur soruyla topluyor."""
-    by_name = {elem_name(el): el for el in elements}
+    akis butun girdileri pesi sira, tek tur soruyla topluyor.
+
+    `label_fn` verilirse listede gosterilecek metin bu fonksiyonla
+    uretilir (varsayilan: elemanin adi). Tip adinin tek basina ayirt
+    etmedigi durumlar icin -- ör. aile adiyla birlikte gosterilmesi
+    gereken family sembolleri."""
+    make_label = label_fn or elem_name
+    by_name = {make_label(el): el for el in elements}
     logger.info("{}: {} secenek bulundu.".format(title, len(by_name)))
     if not by_name:
         if optional or skip_label:
@@ -108,6 +115,35 @@ def pick_text_note_type(doc, title="Text note tipi secin", optional=False):
         title,
         "Projede tanimli bir Text Note Type bulunamadi.",
         optional=optional,
+    )
+
+
+def _symbol_label(symbol):
+    """Family sembolu icin "Aile : Tip" etiketi.
+
+    Kuzey oku aileleri genelde tek ailede birden cok tip barindirir
+    ("Kuzey Oku : 01", "... : 02"); yalniz tip adi ayirt etmeye yetmez."""
+    try:
+        family_name = symbol.Family.Name
+    except Exception:
+        family_name = "?"
+    return "{} : {}".format(family_name, elem_name(symbol))
+
+
+def pick_annotation_symbol(doc, title="Aciklama sembolu secin", skip_label=None):
+    """Projedeki genel aciklama (Generic Annotation) sembollerinden birini
+    sectirir -- kuzey oku aileleri bu kategoride tanimlidir.
+
+    View'e bagli (annotation) semboller oldugu icin plan/detay gibi bir
+    view'e `NewFamilyInstance(nokta, sembol, view)` ile yerlestirilirler."""
+    return pick_by_name(
+        FilteredElementCollector(doc)
+        .OfClass(FamilySymbol)
+        .OfCategory(BuiltInCategory.OST_GenericAnnotation),
+        title,
+        "Projede tanimli bir Generic Annotation sembolu bulunamadi.",
+        skip_label=skip_label,
+        label_fn=_symbol_label,
     )
 
 

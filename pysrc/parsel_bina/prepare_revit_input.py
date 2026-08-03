@@ -29,6 +29,7 @@ import cv2
 import numpy as np
 
 from geometry import extract_buildings, extract_parcel_lines, extract_parcels
+from map_decorations import detect_north_arrow
 from scale import compute_scale_info
 
 SIMPLIFY_TOLERANCE_M = 0.4   # gercek dunyada ~40 cm; raster "merdiven" noktalarini sadelestirir
@@ -38,6 +39,8 @@ MIN_POINT_SPACING_M = 0.1    # bu mesafenin altindaki ardisik noktalar birlestir
                               # kararsizlastirip cokertebiliyor)
 
 FRAME_COLOR = (120, 120, 120)    # BGR - gri
+NORTH_COLOR = (110, 60, 20)      # BGR - lacivert (kaynak goruntudeki kuzey oku rengi)
+NORTH_MARKER_PX = 45             # onizlemede kuzey yonu okunun uzunlugu
 PARCEL_COLOR = (0, 140, 255)     # BGR - turuncu
 BUILDING_COLOR = (255, 120, 0)   # BGR - mavi
 MATCHED_FILL = (0, 200, 0)
@@ -225,6 +228,19 @@ def prepare(
     parcel_lines = _parcel_lines_to_real_world(raw_parcel_lines, meters_per_px, feet_per_px, height)
     frame_lines = _image_frame_lines(width, height, feet_per_px)
 
+    _progress(62, "Kuzey oku aranıyor")
+    north = detect_north_arrow(parsel_path)
+    north_record = None
+    if north is not None:
+        cx, cy = north["center_px"]
+        north_record = {
+            "position_ft": [
+                round(cx * feet_per_px, 3),
+                round((height - cy) * feet_per_px, 3),
+            ],
+            "rotation_deg": north["rotation_deg"],
+        }
+
     label_records: list[dict] = []
     raw_labels: list[dict] = []
     label_warning = None
@@ -254,6 +270,8 @@ def prepare(
         "parcel_lines": parcel_lines,
         "frame_lines_note": "Goruntunun dis sinirini olusturan 4 segment (kapali dikdortgen); Revit'te cizimi cerceveleyen ayri bir line style ile cizilir.",
         "frame_lines": frame_lines,
+        "north_note": "Goruntudeki kuzey okunun konumu ve yonu; Revit'te secilen aciklama sembolu (annotation symbol) bu noktaya, yukari bakan bir sembolu ayni yone cevirecek 'rotation_deg' aci ile yerlestirilir. Ok bulunamazsa null.",
+        "north": north_record,
         "label_count": len(label_records),
         "labels_note": "Parsel numara etiketleri (OCR ile okundu, ör. '591G'). 'confidence' (0-1) dusukse (<~0.5) okuma yanlis olabilir -- G/6, A/4, B/8, S/5 gibi benzer karakterler karisabiliyor. OCR basarisiz/atlandiysa bu liste bostur.",
         "labels": label_records,
@@ -283,6 +301,12 @@ def prepare(
             canvas, label["text"], (int(cx) - 15, int(cy)),
             cv2.FONT_HERSHEY_SIMPLEX, 0.35, color, 1, cv2.LINE_AA,
         )
+    if north is not None:
+        # Tespit edilen yon: dunya vektoru (-sin0, cos0) -> piksel uzayinda Y ters.
+        angle = math.radians(north["rotation_deg"])
+        cx, cy = north["center_px"]
+        tip = (int(cx - math.sin(angle) * NORTH_MARKER_PX), int(cy - math.cos(angle) * NORTH_MARKER_PX))
+        cv2.arrowedLine(canvas, (int(cx), int(cy)), tip, NORTH_COLOR, LINE_THICKNESS, tipLength=0.35)
     cv2.imwrite(str(output_dir / "revit_input_preview.png"), canvas)
     _progress(100, "Tamamlandi")
 
