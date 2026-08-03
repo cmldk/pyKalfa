@@ -107,7 +107,7 @@ def _to_real_world(
         else simplified
     )
     vertices_ft = [
-        [round(px * feet_per_px, 3), round((image_height - py) * feet_per_px, 3)]
+        [round(float(px) * feet_per_px, 3), round((image_height - float(py)) * feet_per_px, 3)]
         for px, py in points_px
     ]
     vertices_ft = _dedupe_close_points(vertices_ft, MIN_POINT_SPACING_M)
@@ -116,20 +116,27 @@ def _to_real_world(
 
 
 def _parcel_lines_to_real_world(
-    polylines_px: list[list[tuple[int, int]]], meters_per_px: float, feet_per_px: float, image_height: int
+    polylines_px: list[list[tuple[float, float]]], meters_per_px: float, feet_per_px: float, image_height: int
 ) -> list[list[list[float]]]:
     """Iskelet-grafigi polyline'larini (piksel) sadelestirip gercek birime
     (ft) cevirir ve ardisik nokta ciftlerini DetailLine segmentleri olarak
     dondurur. Her fiziksel cizgi `extract_parcel_lines()` sayesinde zaten
     tam bir kez geldigi icin ekstra bir cift-cizgi birlestirmesine gerek
-    yoktur (bkz. geometry.py modul docstring'i)."""
+    yoktur (bkz. geometry.py modul docstring'i).
+
+    Koordinatlar temizleme katmanindan alt-piksel (ondalikli) geldigi icin
+    `approxPolyDP` int32 degil float32 uzerinde calistirilir -- int32'ye
+    cevirmek ondalik kismi kirpip cizgileri yeniden bir piksel oynatirdi."""
     segments: list[list[list[float]]] = []
     epsilon_px = SIMPLIFY_TOLERANCE_M / meters_per_px
     for polyline in polylines_px:
-        contour = np.array(polyline, dtype=np.int32).reshape(-1, 1, 2)
+        contour = np.array(polyline, dtype=np.float32).reshape(-1, 1, 2)
         simplified = cv2.approxPolyDP(contour, epsilon_px, False).reshape(-1, 2)
+        # `float()` sart: numpy float32 skalari -- float64'un aksine -- Python
+        # float'inin alt sinifi DEGILDIR, dogrudan json'a verilirse
+        # "not JSON serializable" hatasi alinir.
         vertices_ft = [
-            [round(px * feet_per_px, 3), round((image_height - py) * feet_per_px, 3)]
+            [round(float(px) * feet_per_px, 3), round((image_height - float(py)) * feet_per_px, 3)]
             for px, py in simplified
         ]
         vertices_ft = _dedupe_close_points(vertices_ft, MIN_POINT_SPACING_M)
@@ -312,7 +319,9 @@ def prepare(
     canvas = np.full((height, width, 3), 255, dtype=np.uint8)
     cv2.rectangle(canvas, (0, 0), (width - 1, height - 1), FRAME_COLOR, LINE_THICKNESS)
     for polyline in raw_parcel_lines:
-        pts = np.array(polyline, dtype=np.int32).reshape(-1, 1, 2)
+        # Polyline'lar alt-piksel; cv2.polylines tam sayi ister (kirpma degil
+        # yuvarlama: yarim piksellik kayma onizlemede gorunur olabiliyor).
+        pts = np.round(np.array(polyline, dtype=np.float64)).astype(np.int32).reshape(-1, 1, 2)
         cv2.polylines(canvas, [pts], False, PARCEL_COLOR, LINE_THICKNESS)
     overlay = canvas.copy()
     for b_idx, b_contour in enumerate(buildings):

@@ -39,6 +39,13 @@ Parsel katmaninda iki ek sorun daha vardi:
      kontur cikarmadan once maske `skimage.morphology.skeletonize` ile
      1 piksel genisliginde bir iskelete indirgenir; boylece cizgi
      kalinligindan kaynaklanan kayma buyuk olcude azalir.
+
+Iskeletten cikan ham graf her iki katmanda da `polyline_cleanup` katmanina
+verilir (kavsak tekillestirme, kor cikinti temizligi, zincir birlestirme,
+sadelestirme, nokta oturtma). Ayarlar `BUILDING_CLEANUP`/`PARCEL_CLEANUP`
+sabitlerindedir ve `extract_buildings`/`extract_parcel_lines`e `cleanup`
+argumaniyla gecilerek degistirilebilir; neyin neden yapildigi icin bkz.
+polyline_cleanup.py.
 """
 
 from __future__ import annotations
@@ -47,12 +54,14 @@ from pathlib import Path
 
 import cv2
 import numpy as np
-from shapely.geometry import LineString
+from shapely.geometry import LineString, MultiPolygon, Polygon
 from shapely.ops import polygonize, unary_union
+from shapely.validation import make_valid
 from skimage.morphology import skeletonize
 
 from detect_lines import MIN_CONTOUR_AREA, _load_on_white_background
 from map_decorations import strip_decorations
+from polyline_cleanup import CleanupConfig, Polyline, clean_polylines
 
 MIN_CONTOUR_ARC_LENGTH = 60
 MAX_PARCEL_AREA_RATIO = 0.5  # bu orandan buyuk konturlar parsel degil, agin dis hatti/artefakt
@@ -67,6 +76,17 @@ MAX_FRAME_GAP_PX = 160        # `close_shapes_at_frame`: bundan uzun bosluklar k
                                # kesen duvarindan degil, birbirine bitisik BIRDEN FAZLA binanin
                                # cerceveye art arda degmesinden kaynaklanan sahte bosluklardir)
 MORPH_KERNEL_SIZE = 3
+
+# Iskelet grafiginin temizlenmesi (bkz. polyline_cleanup.py). Iki katman ayni
+# katmanlari kullanir, tek fark aci normalizasyonudur:
+#   - Bina duvarlari gercekte duz ve cogunlukla dik acilidir; 0/45/90'a yakin
+#     bir kenar raster gurultusu yuzunden birkac derece kaymissa duzeltilir.
+#     (Poligonun tamami ayrica regularize.py ile kendi baskin izgarasina
+#     oturtulur; buradaki duzeltme ondan once, cizgi bazinda calisir.)
+#   - Parsel sinirlari dogal olarak egiktir; oraya aci dayatmak sinirlari
+#     bozar, bu yuzden `axis_tolerance_deg=0` (kapali) birakilir.
+BUILDING_CLEANUP = CleanupConfig(axis_tolerance_deg=4.0)
+PARCEL_CLEANUP = CleanupConfig()
 
 
 def _filter_contours(contours: list[np.ndarray]) -> list[np.ndarray]:
@@ -208,7 +228,41 @@ def build_building_line_mask(image_path: Path) -> tuple[np.ndarray, np.ndarray]:
     return image, closed
 
 
-def _polygonize_cells(polylines_px: list[list[tuple[int, int]]]) -> list[np.ndarray]:
+def _valid_polygons(geometry) -> list[Polygon]:
+    """Poligonu Revit'e gonderilebilecek gecerli poligon(lar)a cevirir.
+
+    `polygonize` ciktisi kendi kendine degen (self-touching) bir halkadan
+    gelebilir: iskeletin iki kolu tek bir pikselde birlestiginde ortaya
+    "kum saati" bicimli, OGC acisindan gecersiz bir poligon cikar. Revit
+    boyle bir `CurveLoop`u `FilledRegion`a cevirirken hata verir.
+
+    `make_valid` bu tur bir halkayi -- alan kaybetmeden -- birden fazla
+    gecerli poligona ayirir; her biri kendi bina birimi olur. `make_valid`
+    bir sey dondurmezse (ya da hala gecersizse) klasik `buffer(0)`
+    denenir; ikisi de basarisiz olursa poligon atilir.
+    """
+    if geometry.is_empty:
+        return []
+    if not geometry.is_valid:
+        geometry = make_valid(geometry)
+        if geometry.is_empty or not geometry.is_valid:
+            geometry = geometry.buffer(0)
+    if isinstance(geometry, Polygon):
+        return [geometry] if geometry.is_valid and not geometry.is_empty else []
+    if isinstance(geometry, MultiPolygon):
+        return [g for g in geometry.geoms if g.is_valid and not g.is_empty]
+    # GeometryCollection: make_valid poligonun yaninda cizgi/nokta artiklari
+    # da dondurebilir; sadece poligonlari al.
+    parts = getattr(geometry, "geoms", None)
+    if parts is None:
+        return []
+    result: list[Polygon] = []
+    for part in parts:
+        result.extend(_valid_polygons(part))
+    return result
+
+
+def _polygonize_cells(polylines_px: list[Polyline]) -> list[np.ndarray]:
     """Iskelet-grafigi polyline'larindan, ag icinde kapali kalan HER hucreyi
     (yani her bagimsiz bina birimini) ayri bir kapali kontur olarak dondurur.
 
@@ -227,15 +281,22 @@ def _polygonize_cells(polylines_px: list[list[tuple[int, int]]]) -> list[np.ndar
         return []
     noded = unary_union(lines)
     cells = []
-    for polygon in polygonize(noded):
-        if polygon.is_empty or polygon.area < MIN_CONTOUR_AREA:
-            continue
-        coords = np.array(polygon.exterior.coords[:-1], dtype=np.int32)
-        cells.append(coords.reshape(-1, 1, 2))
+    for cell in polygonize(noded):
+        for polygon in _valid_polygons(cell):
+            if polygon.area < MIN_CONTOUR_AREA:
+                continue
+            # Koordinatlar temizleme katmanindan sonra ondalikli; kontur
+            # arayuzu (cv2.contourArea/pointPolygonTest/drawContours) tam
+            # sayi ister, bu yuzden kirpilmadan yuvarlanir.
+            coords = np.round(np.array(polygon.exterior.coords[:-1], dtype=np.float64)).astype(np.int32)
+            if len(coords) >= 3:
+                cells.append(coords.reshape(-1, 1, 2))
     return cells
 
 
-def extract_buildings(image_path: Path) -> tuple[np.ndarray, list[np.ndarray]]:
+def extract_buildings(
+    image_path: Path, cleanup: CleanupConfig | None = None
+) -> tuple[np.ndarray, list[np.ndarray]]:
     """Her bina BIRIMI icin kapali bir kontur dondurur -> FilledRegion'a hazir.
 
     Bitisik yapilarda (sira ev bloklari) dis hat alinirsa butun blok tek bir
@@ -247,11 +308,19 @@ def extract_buildings(image_path: Path) -> tuple[np.ndarray, list[np.ndarray]]:
     aralarindaki ortak duvarlar dahil -- birebir korunur.
 
     Iskelet, kalin cizginin (~3 px) DIS kenari degil TAM ORTASI oldugu icin
-    binalar cizildigi boyutta kalir ve koseler anti-alias'la pahlanmaz."""
+    binalar cizildigi boyutta kalir ve koseler anti-alias'la pahlanmaz.
+
+    Ham iskelet grafigi `polygonize`a verilmeden once temizlenir (bkz.
+    polyline_cleanup.py): ikiz kavsak dugumleri tek node'a indirgenir, kor
+    cikintilar silinir, zigzaglar sadelestirilir. Kavsak tekillestirmesi
+    burada islevseldir -- kil payi ayri kalan iki dugum, o kavsakta kapanmasi
+    gereken hucrenin (bina biriminin) hic bulunamamasina yol acabiliyordu.
+    `cleanup` ile ayarlar cagiran tarafindan degistirilebilir."""
     image, mask = build_building_line_mask(image_path)
     mask = close_shapes_at_frame(mask)
     skeleton = (skeletonize(mask > 0).astype(np.uint8)) * 255
     polylines = _skeleton_to_polylines(skeleton > 0)
+    polylines = clean_polylines(polylines, cleanup or BUILDING_CLEANUP)
     return image, _polygonize_cells(polylines)
 
 
@@ -382,17 +451,26 @@ def _skeleton_to_polylines(skeleton_bool: np.ndarray) -> list[list[tuple[int, in
     return polylines
 
 
-def extract_parcel_lines(image_path: Path) -> tuple[np.ndarray, list[list[tuple[int, int]]]]:
+def extract_parcel_lines(
+    image_path: Path, cleanup: CleanupConfig | None = None
+) -> tuple[np.ndarray, list[Polyline]]:
     """Parsel agini, her fiziksel cizgiyi tam bir kez iceren piksel bazli
     polyline listesi olarak dondurur -> DetailLine cizimi icin kullanilir.
 
     `extract_parcels()`'in aksine bolge/kontur degil, dogrudan iskelet
     grafigini izler; bu yuzden komsu iki parselin ortak siniri iki kez
     (hafif kaymis) degil, tam olarak bir kez donar.
+
+    Ham graf `polyline_cleanup.clean_polylines` ile temizlenir: kisa kor
+    cikintilar silinir ve yalnizca izleme sirasinda bolunmus parcalar tek
+    polyline'a baglanir -- ikisi de dogrudan DetailLine sayisini dusurur.
+    Aci normalizasyonu parsel katmaninda KAPALIDIR (parsel sinirlari dogal
+    olarak egiktir; bkz. `PARCEL_CLEANUP`). Koordinatlar bu asamadan sonra
+    ondalikli (alt-piksel) doner.
     """
     image, skeleton = build_parcel_line_mask(image_path)
     polylines = _skeleton_to_polylines(skeleton > 0)
-    polylines = [p for p in polylines if len(p) >= 2]
+    polylines = clean_polylines(polylines, cleanup or PARCEL_CLEANUP)
     return image, polylines
 
 
