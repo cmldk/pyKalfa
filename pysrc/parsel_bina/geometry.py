@@ -44,6 +44,7 @@ import numpy as np
 from skimage.morphology import skeletonize
 
 from detect_lines import MIN_CONTOUR_AREA, _load_on_white_background, build_line_mask
+from map_decorations import strip_decorations
 
 MIN_CONTOUR_ARC_LENGTH = 60
 MAX_PARCEL_AREA_RATIO = 0.5  # bu orandan buyuk konturlar parsel degil, agin dis hatti/artefakt
@@ -141,10 +142,14 @@ def close_shapes_at_frame(mask: np.ndarray) -> np.ndarray:
 def extract_buildings(image_path: Path) -> tuple[np.ndarray, list[np.ndarray]]:
     """Her bina icin tek (dis hat) kapali kontur dondurur -> FilledRegion'a hazir.
 
-    Goruntu kenarinda kesilmis binalar once cerceveyle kapatilir (bkz.
+    Bina katmani grayscale esikleme kullandigi icin (parsel katmaninin
+    aksine) harita sagolcumleri -- kuzey oku, olcek cubugu -- de "cizgi"
+    sayilir; once bunlar renk bazli silinir (bkz. `strip_decorations`).
+    Ardindan goruntu kenarinda kesilmis binalar cerceveyle kapatilir (bkz.
     `close_shapes_at_frame`), yoksa dis hatlari bina alanini degil cizgi
     seridini cevirir."""
     image, mask = build_line_mask(image_path)
+    mask = strip_decorations(image, mask)
     mask = close_shapes_at_frame(mask)
     contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
     return image, _filter_contours(contours)
