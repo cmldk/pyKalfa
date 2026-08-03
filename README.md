@@ -67,10 +67,6 @@ boyutunda** ve ölçek çubuğu görünür durumda.
    sorulmaz.
 5. Geometri çizilir ve kaç eleman oluştuğunu gösteren özet açılır.
 
-> Bitişik yapılar tek blok olarak değil, çizimdeki bölme çizgilerine
-> göre ayrı ayrı **FilledRegion** olarak oluşturulur; her bina birimi
-> Revit'te tek başına seçilebilir.
-
 > Görselin alt kısmındaki kuzey oku, ölçek çubuğu ve künye yazısı
 > geometriye dahil edilmez. Kuzey okunun yalnızca **konumu ve yönü**
 > ölçülür; çizime projenin kendi sembolü aynı yöne çevrilerek konur.
