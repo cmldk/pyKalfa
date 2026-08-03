@@ -4,6 +4,7 @@
 # parsel_bina (Parsel/Bina Aktar)
 opencv-python-headless>=4.9
 scikit-image>=0.22
+shapely>=2.0
 easyocr>=1.7
 
 # duvar (Duvar Aktar)
