@@ -42,6 +42,14 @@ répète pas aux démarrages suivants.
 
 ### Parsel/Bina Aktar — parcelles et bâtiments
 
+| Entrée : parcelles | Entrée : bâtiments | Sortie : Revit |
+| :---: | :---: | :---: |
+| ![Image des parcelles](assets/parsel_500.png) | ![Image des bâtiments](assets/bina_500.png) | ![Résultat Revit](assets/output_revit_img.png) |
+
+Vos propres images doivent ressembler à ces exemples du dossier
+`assets/` : deux calques du même extrait cadastral, à la **même taille
+en pixels**, avec l'échelle graphique visible.
+
 1. Placez-vous dans une vue en **plan, de détail, en coupe ou en
    élévation** (cela ne fonctionne pas en vue 3D).
 2. **pyKalfa** → **Parsel / Bina** → **Parsel/Bina Aktar**.
@@ -56,10 +64,6 @@ répète pas aux démarrages suivants.
    aucune question ne vous est posée pendant cette étape.
 5. La géométrie est dessinée, puis un résumé des éléments créés
    s'affiche.
-
-> Des images d'exemple se trouvent dans le dossier `assets/`
-> (`parsel_500.png`, `bina_500.png`) ; vos propres images doivent leur
-> ressembler.
 
 > Les numéros de parcelles sont lus par OCR, avec une précision
 > d'environ 80 %. Des caractères proches (G/6, A/4, B/8, S/5) peuvent

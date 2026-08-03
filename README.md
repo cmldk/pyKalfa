@@ -39,6 +39,14 @@ Sonraki açılışlarda kurulum tekrarlanmaz.
 
 ### Parsel/Bina Aktar
 
+| Girdi: parsel | Girdi: bina | Çıktı: Revit |
+| :---: | :---: | :---: |
+| ![Parsel görseli](assets/parsel_500.png) | ![Bina görseli](assets/bina_500.png) | ![Revit çıktısı](assets/output_revit_img.png) |
+
+Kendi görselleriniz `assets/` klasöründeki bu örneklere benzer
+olmalıdır: aynı kadastro kesitinin iki katmanı, **aynı piksel
+boyutunda** ve ölçek çubuğu görünür durumda.
+
 1. **Plan, detay, kesit veya cephe** görünümüne geçin (3D görünümde
    çalışmaz).
 2. **pyKalfa** → **Parsel / Bina** → **Parsel/Bina Aktar**.
@@ -52,9 +60,6 @@ Sonraki açılışlarda kurulum tekrarlanmaz.
 4. Görüntü işleme bir ilerleme çubuğuyla çalışır; bu sırada soru
    sorulmaz.
 5. Geometri çizilir ve kaç eleman oluştuğunu gösteren özet açılır.
-
-> Örnek görseller `assets/` klasöründedir (`parsel_500.png`,
-> `bina_500.png`); kendi görselleriniz bunlara benzer olmalıdır.
 
 > Parsel numaraları OCR ile okunur, doğruluk ~%80'dir. Benzer
 > karakterler (G/6, A/4, B/8, S/5) karışabilir; sonucu kaynak görselle
