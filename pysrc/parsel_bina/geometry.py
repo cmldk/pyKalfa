@@ -147,11 +147,20 @@ def extract_buildings(image_path: Path) -> tuple[np.ndarray, list[np.ndarray]]:
     sayilir; once bunlar renk bazli silinir (bkz. `strip_decorations`).
     Ardindan goruntu kenarinda kesilmis binalar cerceveyle kapatilir (bkz.
     `close_shapes_at_frame`), yoksa dis hatlari bina alanini degil cizgi
-    seridini cevirir."""
+    seridini cevirir.
+
+    Kontur, kalin cizginin DIS kenarindan degil, 1 piksele inceltilmis
+    ISKELETINDEN cikarilir (parsel katmanindaki ile ayni `skeletonize`).
+    Kaynak cizimde bina siniri ~3 px kalinliginda bir seritt; dis kenari
+    izlemek her binayi her yonden bir cizgi kalinligi buyutur (1:500'de
+    ~40 cm) ve morfolojik kapama + anti-alias ile yuvarlanan dis koseler
+    sadelestirmeden sonra pahli kose birakir. Iskelet cizginin tam
+    ortasindan gectigi icin bina cizildigi yerde ve boyutta kalir."""
     image, mask = build_line_mask(image_path)
     mask = strip_decorations(image, mask)
     mask = close_shapes_at_frame(mask)
-    contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    skeleton = (skeletonize(mask > 0).astype(np.uint8)) * 255
+    contours, _ = cv2.findContours(skeleton, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
     return image, _filter_contours(contours)
 
 
