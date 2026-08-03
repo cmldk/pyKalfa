@@ -62,6 +62,10 @@ BUILDING_RED_MARGIN = 60      # R kanali G/B'nin en az bu kadar uzerindeyse "bin
                                # genelde 200+; kahverengi/lacivert sagolcumlerde bu fark negatif)
 BUILDING_ALPHA_MIN = 16       # PNG'nin kendi alfa kanalindaki bu esigin altindaki piksel
                                # anti-alias/gurultu sayilir, cizgiye dahil edilmez
+MAX_FRAME_GAP_PX = 160        # `close_shapes_at_frame`: bundan uzun bosluklar kapatilmaz
+                               # (bkz. o fonksiyonun docstring'i -- tek bir binanin cerceveyi
+                               # kesen duvarindan degil, birbirine bitisik BIRDEN FAZLA binanin
+                               # cerceveye art arda degmesinden kaynaklanan sahte bosluklardir)
 MORPH_KERNEL_SIZE = 3
 
 
@@ -120,6 +124,20 @@ def close_shapes_at_frame(mask: np.ndarray) -> np.ndarray:
 
     Araya baska bir bilesenin degme noktasi giren bosluklar da atlanir --
     aksi halde cerceve boyunca komsu iki bina tek bir bolgeye yapisirdi.
+
+    `MAX_FRAME_GAP_PX`'ten uzun bosluklar da atlanir. Bitisik binalar
+    (sira ev bloklari) ic duvarlarla birbirine bagli oldugu icin TEK bir
+    baglanti bileseni olusturur; bu blok cerceveye ONLARCA farkli noktada
+    degebilir (her binanin kendi cephesi ayri bir degme noktasidir). "En
+    genis bosluk disinda kalani kapat" kurali boyle bir durumda, iki
+    binanin arasindaki gercek sokak/bosluk araligini da (yanlislikla)
+    kapatip butun bloku -- ic bolme cizgileri hala ayakta olsa bile --
+    goruntu cercevesi uzerinden TEK bir dev poligona kaynastirirdi (bkz.
+    `extract_buildings`: bu kaynasma `_polygonize_cells`'in o bolgedeki
+    her binayi ayri ayri bulmasini engelliyordu). Tek bir binanin
+    cerceveyi kesen cephesi -- birden fazla binanin ust uste degdigi bir
+    blok degil -- birkac on pikselden uzun olmaz; bu esigin uzerindeki
+    bosluklar gercek disaridir, kapatilmaz.
     """
     height, width = mask.shape
     perimeter = _perimeter_coords(height, width)
@@ -141,7 +159,7 @@ def close_shapes_at_frame(mask: np.ndarray) -> np.ndarray:
         widest = max(range(len(gaps)), key=lambda i: gaps[i][1] - gaps[i][0])
 
         for i, (start, end) in enumerate(gaps):
-            if i == widest or end - start <= 1:
+            if i == widest or end - start <= 1 or end - start > MAX_FRAME_GAP_PX:
                 continue
             span = [(start + k) % total for k in range(1, end - start)]
             if any(perimeter_labels[s] not in (0, label_id) for s in span):
