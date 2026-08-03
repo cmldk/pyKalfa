@@ -60,9 +60,16 @@ scale bar visible.
      top of the list if you do not want a frame
    - pick a **Filled Region Type** for buildings
    - pick a **Text Note Type** for parcel numbers
+   - pick a **Generic Annotation** symbol for the north arrow — choose
+     the *"Kuzey oku ekleme"* entry at the top of the list to skip it
 4. Image processing runs behind a progress bar; you are not asked
    anything during this step.
 5. The geometry is drawn and a summary of created elements appears.
+
+> The north arrow, scale bar and credit line at the bottom of the image
+> are not imported as geometry. Only the north arrow's **position and
+> direction** are measured; the project's own symbol is placed there,
+> turned the same way.
 
 > Parcel numbers are read with OCR, which is about 80% accurate. Similar
 > characters (G/6, A/4, B/8, S/5) may be confused — compare the result

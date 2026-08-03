@@ -60,9 +60,16 @@ boyutunda** ve ölçek çubuğu görünür durumda.
      *"Cerceve cizme"* seçeneğini işaretleyin
    - binalar için bir **Filled Region Type** seçin
    - parsel numaraları için bir **Text Note Type** seçin
+   - kuzey oku için bir **Generic Annotation** sembolü seçin —
+     istemiyorsanız listenin başındaki *"Kuzey oku ekleme"* seçeneğini
+     işaretleyin
 4. Görüntü işleme bir ilerleme çubuğuyla çalışır; bu sırada soru
    sorulmaz.
 5. Geometri çizilir ve kaç eleman oluştuğunu gösteren özet açılır.
+
+> Görselin alt kısmındaki kuzey oku, ölçek çubuğu ve künye yazısı
+> geometriye dahil edilmez. Kuzey okunun yalnızca **konumu ve yönü**
+> ölçülür; çizime projenin kendi sembolü aynı yöne çevrilerek konur.
 
 > Parsel numaraları OCR ile okunur, doğruluk ~%80'dir. Benzer
 > karakterler (G/6, A/4, B/8, S/5) karışabilir; sonucu kaynak görselle

@@ -29,15 +29,22 @@ import cv2
 import numpy as np
 
 from geometry import extract_buildings, extract_parcel_lines, extract_parcels
+from map_decorations import detect_north_arrow
+from regularize import snap_to_dominant_axes
 from scale import compute_scale_info
 
-SIMPLIFY_TOLERANCE_M = 0.4   # gercek dunyada ~40 cm; raster "merdiven" noktalarini sadelestirir
+SIMPLIFY_TOLERANCE_M = 0.3   # gercek dunyada 30 cm; raster "merdiven" noktalarini sadelestirir
+                              # (0.4'ten dusuruldu: poligonlar cizgiye daha yakin oturuyor.
+                              #  Daha da dusurmek ters teper -- merdiven basamaklari kisa ve
+                              #  egik kenarlar olarak hayatta kalip izgaraya oturmayi bozar.)
 MIN_POINT_SPACING_M = 0.1    # bu mesafenin altindaki ardisik noktalar birlestirilir
                               # (Revit'te sifira yakin uzunlukta cizgi/loop segmenti
                               # olusmasin diye -- boylesi otomasyonlarda Revit'i
                               # kararsizlastirip cokertebiliyor)
 
 FRAME_COLOR = (120, 120, 120)    # BGR - gri
+NORTH_COLOR = (110, 60, 20)      # BGR - lacivert (kaynak goruntudeki kuzey oku rengi)
+NORTH_MARKER_PX = 45             # onizlemede kuzey yonu okunun uzunlugu
 PARCEL_COLOR = (0, 140, 255)     # BGR - turuncu
 BUILDING_COLOR = (255, 120, 0)   # BGR - mavi
 MATCHED_FILL = (0, 200, 0)
@@ -76,12 +83,32 @@ def _dedupe_close_points(points: list[list[float]], min_spacing: float) -> list[
     return result
 
 
-def _to_real_world(contour: np.ndarray, meters_per_px: float, feet_per_px: float, image_height: int) -> tuple[list[list[float]], float]:
+def _to_real_world(
+    contour: np.ndarray,
+    meters_per_px: float,
+    feet_per_px: float,
+    image_height: int,
+    square_up: bool = False,
+) -> tuple[list[list[float]], float]:
+    """Piksel konturunu sadelestirip gercek birime (ft) cevirir.
+
+    `square_up=True` ise poligon ayrica kendi baskin izgarasina oturtulur
+    (bkz. regularize.py). Bina siniri gercekte duz ve cogunlukla dik
+    duvarlardan olusur; sadelestirme tek basina kenar acilarini bir-iki
+    derece kaydirip koseleri pahladigi icin dortgenler yamuk gorunur.
+    Parsel sinirlarina UYGULANMAZ: onlar dogal olarak egik ve dik acili
+    olmayan cokgenlerdir.
+    """
     epsilon_px = SIMPLIFY_TOLERANCE_M / meters_per_px
     simplified = cv2.approxPolyDP(contour, epsilon_px, True).reshape(-1, 2)
+    points_px = (
+        snap_to_dominant_axes(simplified.tolist(), max_shift=epsilon_px)
+        if square_up
+        else simplified
+    )
     vertices_ft = [
-        [round(px * feet_per_px, 3), round((image_height - py) * feet_per_px, 3)]
-        for px, py in simplified
+        [round(float(px) * feet_per_px, 3), round((image_height - float(py)) * feet_per_px, 3)]
+        for px, py in points_px
     ]
     vertices_ft = _dedupe_close_points(vertices_ft, MIN_POINT_SPACING_M)
     area_m2 = cv2.contourArea(contour) * (meters_per_px ** 2)
@@ -89,20 +116,27 @@ def _to_real_world(contour: np.ndarray, meters_per_px: float, feet_per_px: float
 
 
 def _parcel_lines_to_real_world(
-    polylines_px: list[list[tuple[int, int]]], meters_per_px: float, feet_per_px: float, image_height: int
+    polylines_px: list[list[tuple[float, float]]], meters_per_px: float, feet_per_px: float, image_height: int
 ) -> list[list[list[float]]]:
     """Iskelet-grafigi polyline'larini (piksel) sadelestirip gercek birime
     (ft) cevirir ve ardisik nokta ciftlerini DetailLine segmentleri olarak
     dondurur. Her fiziksel cizgi `extract_parcel_lines()` sayesinde zaten
     tam bir kez geldigi icin ekstra bir cift-cizgi birlestirmesine gerek
-    yoktur (bkz. geometry.py modul docstring'i)."""
+    yoktur (bkz. geometry.py modul docstring'i).
+
+    Koordinatlar temizleme katmanindan alt-piksel (ondalikli) geldigi icin
+    `approxPolyDP` int32 degil float32 uzerinde calistirilir -- int32'ye
+    cevirmek ondalik kismi kirpip cizgileri yeniden bir piksel oynatirdi."""
     segments: list[list[list[float]]] = []
     epsilon_px = SIMPLIFY_TOLERANCE_M / meters_per_px
     for polyline in polylines_px:
-        contour = np.array(polyline, dtype=np.int32).reshape(-1, 1, 2)
+        contour = np.array(polyline, dtype=np.float32).reshape(-1, 1, 2)
         simplified = cv2.approxPolyDP(contour, epsilon_px, False).reshape(-1, 2)
+        # `float()` sart: numpy float32 skalari -- float64'un aksine -- Python
+        # float'inin alt sinifi DEGILDIR, dogrudan json'a verilirse
+        # "not JSON serializable" hatasi alinir.
         vertices_ft = [
-            [round(px * feet_per_px, 3), round((image_height - py) * feet_per_px, 3)]
+            [round(float(px) * feet_per_px, 3), round((image_height - float(py)) * feet_per_px, 3)]
             for px, py in simplified
         ]
         vertices_ft = _dedupe_close_points(vertices_ft, MIN_POINT_SPACING_M)
@@ -210,7 +244,9 @@ def prepare(
 
     building_records = []
     for b_idx, b_contour in enumerate(buildings):
-        vertices_ft, area_m2 = _to_real_world(b_contour, meters_per_px, feet_per_px, height)
+        vertices_ft, area_m2 = _to_real_world(
+            b_contour, meters_per_px, feet_per_px, height, square_up=True
+        )
         building_records.append(
             {
                 "id": b_idx,
@@ -224,6 +260,19 @@ def prepare(
     _, raw_parcel_lines = extract_parcel_lines(parsel_path)
     parcel_lines = _parcel_lines_to_real_world(raw_parcel_lines, meters_per_px, feet_per_px, height)
     frame_lines = _image_frame_lines(width, height, feet_per_px)
+
+    _progress(62, "Kuzey oku aranıyor")
+    north = detect_north_arrow(parsel_path)
+    north_record = None
+    if north is not None:
+        cx, cy = north["center_px"]
+        north_record = {
+            "position_ft": [
+                round(cx * feet_per_px, 3),
+                round((height - cy) * feet_per_px, 3),
+            ],
+            "rotation_deg": north["rotation_deg"],
+        }
 
     label_records: list[dict] = []
     raw_labels: list[dict] = []
@@ -254,6 +303,8 @@ def prepare(
         "parcel_lines": parcel_lines,
         "frame_lines_note": "Goruntunun dis sinirini olusturan 4 segment (kapali dikdortgen); Revit'te cizimi cerceveleyen ayri bir line style ile cizilir.",
         "frame_lines": frame_lines,
+        "north_note": "Goruntudeki kuzey okunun konumu ve yonu; Revit'te secilen aciklama sembolu (annotation symbol) bu noktaya, yukari bakan bir sembolu ayni yone cevirecek 'rotation_deg' aci ile yerlestirilir. Ok bulunamazsa null.",
+        "north": north_record,
         "label_count": len(label_records),
         "labels_note": "Parsel numara etiketleri (OCR ile okundu, ör. '591G'). 'confidence' (0-1) dusukse (<~0.5) okuma yanlis olabilir -- G/6, A/4, B/8, S/5 gibi benzer karakterler karisabiliyor. OCR basarisiz/atlandiysa bu liste bostur.",
         "labels": label_records,
@@ -268,7 +319,9 @@ def prepare(
     canvas = np.full((height, width, 3), 255, dtype=np.uint8)
     cv2.rectangle(canvas, (0, 0), (width - 1, height - 1), FRAME_COLOR, LINE_THICKNESS)
     for polyline in raw_parcel_lines:
-        pts = np.array(polyline, dtype=np.int32).reshape(-1, 1, 2)
+        # Polyline'lar alt-piksel; cv2.polylines tam sayi ister (kirpma degil
+        # yuvarlama: yarim piksellik kayma onizlemede gorunur olabiliyor).
+        pts = np.round(np.array(polyline, dtype=np.float64)).astype(np.int32).reshape(-1, 1, 2)
         cv2.polylines(canvas, [pts], False, PARCEL_COLOR, LINE_THICKNESS)
     overlay = canvas.copy()
     for b_idx, b_contour in enumerate(buildings):
@@ -283,6 +336,12 @@ def prepare(
             canvas, label["text"], (int(cx) - 15, int(cy)),
             cv2.FONT_HERSHEY_SIMPLEX, 0.35, color, 1, cv2.LINE_AA,
         )
+    if north is not None:
+        # Tespit edilen yon: dunya vektoru (-sin0, cos0) -> piksel uzayinda Y ters.
+        angle = math.radians(north["rotation_deg"])
+        cx, cy = north["center_px"]
+        tip = (int(cx - math.sin(angle) * NORTH_MARKER_PX), int(cy - math.cos(angle) * NORTH_MARKER_PX))
+        cv2.arrowedLine(canvas, (int(cx), int(cy)), tip, NORTH_COLOR, LINE_THICKNESS, tipLength=0.35)
     cv2.imwrite(str(output_dir / "revit_input_preview.png"), canvas)
     _progress(100, "Tamamlandi")
 
