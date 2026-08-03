@@ -148,21 +148,24 @@ def extract_buildings(image_path: Path) -> tuple[np.ndarray, list[np.ndarray]]:
     Ardindan goruntu kenarinda kesilmis binalar cerceveyle kapatilir (bkz.
     `close_shapes_at_frame`), yoksa hic kapali bolge olusturmazlar.
 
-    Konturlar cizgi agindaki DELIKLER (RETR_CCOMP hiyerarsisinde ebeveyni
-    olan konturlar) olarak alinir, cizgi bileseninin DIS hatti olarak
-    degil. Sira evler gibi bitisik yapilarda ortak duvar tek bir cizgidir;
-    dis hat alinirsa butun ada tek bir FilledRegion olur ve ic bolme
-    cizgileri kaybolur. Delikler ise cizgi agindaki her kapali hucreyi --
-    yani her bagimsiz bina birimini -- ayri ayri verir.
+    Her bina birimi, cizgi agindaki bir HUCREdir (cizgilerle cevrili kapali
+    bir bolge). Bileseni disaridan cevreleyen dis hat alinirsa sira evler
+    gibi bitisik yapilarda butun ada tek bir FilledRegion olur ve ic bolme
+    cizgileri kaybolur.
 
-    Hucreler cizgi maskesinin degil, 1 piksele inceltilmis ISKELETININ
-    delikleridir (parsel katmanindaki ile ayni `skeletonize`). Kalin
-    cizginin ic kenari alinirsa her bina bir cizgi kalinligi kadar kucuk
-    cikar, bitisik iki birim arasinda bir cizgi kalinligi bosluk kalir ve
-    anti-alias'la yuvarlanan ic koseler sadelestirmeden sonra "yamuk"
-    dortgenler uretir. Iskelet ise cizginin TAM ORTASINDAN gecer: bina
-    cizildigi boyutta kalir, ortak duvarli birimler bitisik olur, koseler
-    keskin kalir.
+    Hucre siniri cizginin TAM ORTASINDAN gecmelidir; bunun icin iki adim
+    gerekir:
+
+    1. Cizgi maskesi 1 piksele inceltilir (`skeletonize`, parsel
+       katmanindaki ile ayni). Kalin cizginin ic kenari kullanilirsa her
+       bina bir cizgi kalinligi kadar kucuk cikar ve anti-alias'la
+       yuvarlanan ic koseler sadelestirmeden sonra "yamuk" dortgen uretir.
+    2. Hucreler, iskeletin delikleri olarak degil, ARKA PLAN bilesenleri
+       1 piksel BUYUTULEREK alinir. Delik konturu iskeletin yanindan
+       gectigi icin bitisik iki birimin sinirlari arasinda 1-2 px (1:500'de
+       13-27 cm) bosluk kalir. Buyutulen hucreler ise iskelet pikselinin
+       KENDISINI de icerir; ortak duvarda iki bina ayni kenar cizgisini
+       paylasir, yani margin sifirdir.
     """
     image, mask = build_line_mask(image_path)
     mask = strip_decorations(image, mask)
@@ -172,14 +175,45 @@ def extract_buildings(image_path: Path) -> tuple[np.ndarray, list[np.ndarray]]:
     # cogu hic kapanmaz ve tamamen kaybolur.
     mask = close_shapes_at_frame(mask)
     skeleton = (skeletonize(mask > 0).astype(np.uint8)) * 255
+    return image, _cells_on_centerline(skeleton)
 
-    contours, hierarchy = cv2.findContours(skeleton, cv2.RETR_CCOMP, cv2.CHAIN_APPROX_SIMPLE)
-    if hierarchy is None:
-        return image, []
-    # RETR_CCOMP: hierarchy[0][i][3] = ebeveyn indeksi; -1 degilse bu kontur
-    # bir cizgi bileseninin ic bosluğu, yani kapali bir hucredir.
-    cells = [c for c, node in zip(contours, hierarchy[0]) if node[3] != -1]
-    return image, [c for c in cells if cv2.contourArea(c) >= MIN_CONTOUR_AREA]
+
+def _cells_on_centerline(skeleton: np.ndarray) -> list[np.ndarray]:
+    """Iskelet agindaki her hucreyi, siniri cizgi merkezinden gecen bir
+    kontur olarak dondurur (bkz. `extract_buildings`).
+
+    Arka plan 4-komsulukla bilesenlere ayrilir; her bilesen bir hucredir.
+    Aglarin disinda kalan bosluk (sokak/bos alan) elenir: kenara degen
+    bilesenlerin en buyugu odur -- kenara degmek tek basina olcut degildir,
+    cunku goruntu kenarinda kesilen binalarin hucreleri de kenara deger.
+    """
+    height, width = skeleton.shape
+    background = (skeleton == 0).astype(np.uint8)
+    num_labels, labels, stats, _ = cv2.connectedComponentsWithStats(background, connectivity=4)
+
+    border = np.concatenate([labels[0, :], labels[-1, :], labels[:, 0], labels[:, -1]])
+    touching = set(int(v) for v in np.unique(border) if v != 0)
+    outside = max(touching, key=lambda i: stats[i, cv2.CC_STAT_AREA]) if touching else None
+
+    kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (3, 3))
+    cells = []
+    for label_id in range(1, num_labels):
+        if label_id == outside or stats[label_id, cv2.CC_STAT_AREA] < MIN_CONTOUR_AREA:
+            continue
+        x, y, w, h, _ = stats[label_id]
+        # Yalniz bileşenin cevresinde calis: butun goruntuyu her hucre icin
+        # genisletmek gereksiz pahali olurdu.
+        x0, y0 = max(x - 2, 0), max(y - 2, 0)
+        x1, y1 = min(x + w + 2, width), min(y + h + 2, height)
+        roi = cv2.dilate((labels[y0:y1, x0:x1] == label_id).astype(np.uint8), kernel)
+        contours, _ = cv2.findContours(roi, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        if not contours:
+            continue
+        contour = max(contours, key=cv2.contourArea)
+        if cv2.contourArea(contour) < MIN_CONTOUR_AREA:
+            continue
+        cells.append(contour + np.array([[x0, y0]], dtype=np.int32))
+    return cells
 
 
 def extract_parcels(image_path: Path) -> tuple[np.ndarray, list[np.ndarray]]:
