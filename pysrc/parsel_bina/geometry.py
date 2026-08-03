@@ -155,16 +155,25 @@ def extract_buildings(image_path: Path) -> tuple[np.ndarray, list[np.ndarray]]:
     cizgileri kaybolur. Delikler ise cizgi agindaki her kapali hucreyi --
     yani her bagimsiz bina birimini -- ayri ayri verir.
 
-    Yan etki: bolge, cizginin ICINDEN gectigi icin bitisik iki birim
-    arasinda bir cizgi kalinligi kadar (~2 px) bosluk kalir. Bu, boru
-    hattinin kendi sadelestirme toleransindan (0.4 m ~ 3 px) kucuktur ve
-    birimlerin ayri ayri gorunmesini saglar.
+    Hucreler cizgi maskesinin degil, 1 piksele inceltilmis ISKELETININ
+    delikleridir (parsel katmanindaki ile ayni `skeletonize`). Kalin
+    cizginin ic kenari alinirsa her bina bir cizgi kalinligi kadar kucuk
+    cikar, bitisik iki birim arasinda bir cizgi kalinligi bosluk kalir ve
+    anti-alias'la yuvarlanan ic koseler sadelestirmeden sonra "yamuk"
+    dortgenler uretir. Iskelet ise cizginin TAM ORTASINDAN gecer: bina
+    cizildigi boyutta kalir, ortak duvarli birimler bitisik olur, koseler
+    keskin kalir.
     """
     image, mask = build_line_mask(image_path)
     mask = strip_decorations(image, mask)
+    # Cerceve kapamasi inceltmeden ONCE yapilmali: iskelet goruntu kenarindan
+    # birkac piksel iceri cekiliyor (kalin maskede 236 kenar pikseli varken
+    # iskelette 18 kaliyor), sonra kapatilirsa kenarda kesilen binalarin
+    # cogu hic kapanmaz ve tamamen kaybolur.
     mask = close_shapes_at_frame(mask)
+    skeleton = (skeletonize(mask > 0).astype(np.uint8)) * 255
 
-    contours, hierarchy = cv2.findContours(mask, cv2.RETR_CCOMP, cv2.CHAIN_APPROX_SIMPLE)
+    contours, hierarchy = cv2.findContours(skeleton, cv2.RETR_CCOMP, cv2.CHAIN_APPROX_SIMPLE)
     if hierarchy is None:
         return image, []
     # RETR_CCOMP: hierarchy[0][i][3] = ebeveyn indeksi; -1 degilse bu kontur
