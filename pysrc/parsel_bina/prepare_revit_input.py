@@ -30,6 +30,7 @@ import numpy as np
 
 from geometry import extract_buildings, extract_parcel_lines, extract_parcels
 from map_decorations import detect_north_arrow
+from regularize import snap_to_dominant_axes
 from scale import compute_scale_info
 
 SIMPLIFY_TOLERANCE_M = 0.4   # gercek dunyada ~40 cm; raster "merdiven" noktalarini sadelestirir
@@ -79,12 +80,32 @@ def _dedupe_close_points(points: list[list[float]], min_spacing: float) -> list[
     return result
 
 
-def _to_real_world(contour: np.ndarray, meters_per_px: float, feet_per_px: float, image_height: int) -> tuple[list[list[float]], float]:
+def _to_real_world(
+    contour: np.ndarray,
+    meters_per_px: float,
+    feet_per_px: float,
+    image_height: int,
+    square_up: bool = False,
+) -> tuple[list[list[float]], float]:
+    """Piksel konturunu sadelestirip gercek birime (ft) cevirir.
+
+    `square_up=True` ise poligon ayrica kendi baskin izgarasina oturtulur
+    (bkz. regularize.py). Bina siniri gercekte duz ve cogunlukla dik
+    duvarlardan olusur; sadelestirme tek basina kenar acilarini bir-iki
+    derece kaydirip koseleri pahladigi icin dortgenler yamuk gorunur.
+    Parsel sinirlarina UYGULANMAZ: onlar dogal olarak egik ve dik acili
+    olmayan cokgenlerdir.
+    """
     epsilon_px = SIMPLIFY_TOLERANCE_M / meters_per_px
     simplified = cv2.approxPolyDP(contour, epsilon_px, True).reshape(-1, 2)
+    points_px = (
+        snap_to_dominant_axes(simplified.tolist(), max_shift=epsilon_px)
+        if square_up
+        else simplified
+    )
     vertices_ft = [
         [round(px * feet_per_px, 3), round((image_height - py) * feet_per_px, 3)]
-        for px, py in simplified
+        for px, py in points_px
     ]
     vertices_ft = _dedupe_close_points(vertices_ft, MIN_POINT_SPACING_M)
     area_m2 = cv2.contourArea(contour) * (meters_per_px ** 2)
@@ -213,7 +234,9 @@ def prepare(
 
     building_records = []
     for b_idx, b_contour in enumerate(buildings):
-        vertices_ft, area_m2 = _to_real_world(b_contour, meters_per_px, feet_per_px, height)
+        vertices_ft, area_m2 = _to_real_world(
+            b_contour, meters_per_px, feet_per_px, height, square_up=True
+        )
         building_records.append(
             {
                 "id": b_idx,
