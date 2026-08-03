@@ -55,6 +55,9 @@ scale bar visible.
    - select the building image (PNG)
    - enter the map scale denominator (`500` for 1:500)
    - pick a **Line Style** for parcel boundaries
+   - pick a separate **Line Style** for the drawing frame (the outer
+     border of the image) — choose the *"Cerceve cizme"* entry at the
+     top of the list if you do not want a frame
    - pick a **Filled Region Type** for buildings
    - pick a **Text Note Type** for parcel numbers
 4. Image processing runs behind a progress bar; you are not asked

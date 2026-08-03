@@ -58,6 +58,9 @@ en pixels**, avec l'échelle graphique visible.
    - sélectionnez l'image des bâtiments (PNG)
    - saisissez le dénominateur de l'échelle (`500` pour 1:500)
    - choisissez un **Line Style** pour les limites de parcelles
+   - choisissez un **Line Style** distinct pour le cadre du dessin (la
+     bordure extérieure de l'image) — sélectionnez l'entrée *"Cerceve
+     cizme"* en tête de liste si vous n'en voulez pas
    - choisissez un **Filled Region Type** pour les bâtiments
    - choisissez un **Text Note Type** pour les numéros de parcelles
 4. Le traitement d'image s'exécute derrière une barre de progression ;

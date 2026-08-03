@@ -55,6 +55,9 @@ boyutunda** ve ölçek çubuğu görünür durumda.
    - bina görselini (PNG) seçin
    - harita ölçeğinin paydasını yazın (1:500 için `500`)
    - parsel çizgileri için bir **Line Style** seçin
+   - çizim çerçevesi (görüntünün dış sınırı) için ayrı bir **Line
+     Style** seçin — çerçeve istemiyorsanız listenin başındaki
+     *"Cerceve cizme"* seçeneğini işaretleyin
    - binalar için bir **Filled Region Type** seçin
    - parsel numaraları için bir **Text Note Type** seçin
 4. Görüntü işleme bir ilerleme çubuğuyla çalışır; bu sırada soru
