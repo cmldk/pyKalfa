@@ -140,19 +140,37 @@ def close_shapes_at_frame(mask: np.ndarray) -> np.ndarray:
 
 
 def extract_buildings(image_path: Path) -> tuple[np.ndarray, list[np.ndarray]]:
-    """Her bina icin tek (dis hat) kapali kontur dondurur -> FilledRegion'a hazir.
+    """Her bina BIRIMI icin kapali bir kontur dondurur -> FilledRegion'a hazir.
 
     Bina katmani grayscale esikleme kullandigi icin (parsel katmaninin
     aksine) harita sagolcumleri -- kuzey oku, olcek cubugu -- de "cizgi"
     sayilir; once bunlar renk bazli silinir (bkz. `strip_decorations`).
     Ardindan goruntu kenarinda kesilmis binalar cerceveyle kapatilir (bkz.
-    `close_shapes_at_frame`), yoksa dis hatlari bina alanini degil cizgi
-    seridini cevirir."""
+    `close_shapes_at_frame`), yoksa hic kapali bolge olusturmazlar.
+
+    Konturlar cizgi agindaki DELIKLER (RETR_CCOMP hiyerarsisinde ebeveyni
+    olan konturlar) olarak alinir, cizgi bileseninin DIS hatti olarak
+    degil. Sira evler gibi bitisik yapilarda ortak duvar tek bir cizgidir;
+    dis hat alinirsa butun ada tek bir FilledRegion olur ve ic bolme
+    cizgileri kaybolur. Delikler ise cizgi agindaki her kapali hucreyi --
+    yani her bagimsiz bina birimini -- ayri ayri verir.
+
+    Yan etki: bolge, cizginin ICINDEN gectigi icin bitisik iki birim
+    arasinda bir cizgi kalinligi kadar (~2 px) bosluk kalir. Bu, boru
+    hattinin kendi sadelestirme toleransindan (0.4 m ~ 3 px) kucuktur ve
+    birimlerin ayri ayri gorunmesini saglar.
+    """
     image, mask = build_line_mask(image_path)
     mask = strip_decorations(image, mask)
     mask = close_shapes_at_frame(mask)
-    contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-    return image, _filter_contours(contours)
+
+    contours, hierarchy = cv2.findContours(mask, cv2.RETR_CCOMP, cv2.CHAIN_APPROX_SIMPLE)
+    if hierarchy is None:
+        return image, []
+    # RETR_CCOMP: hierarchy[0][i][3] = ebeveyn indeksi; -1 degilse bu kontur
+    # bir cizgi bileseninin ic bosluğu, yani kapali bir hucredir.
+    cells = [c for c, node in zip(contours, hierarchy[0]) if node[3] != -1]
+    return image, [c for c in cells if cv2.contourArea(c) >= MIN_CONTOUR_AREA]
 
 
 def extract_parcels(image_path: Path) -> tuple[np.ndarray, list[np.ndarray]]:

@@ -66,6 +66,10 @@ scale bar visible.
    anything during this step.
 5. The geometry is drawn and a summary of created elements appears.
 
+> Attached structures are not merged into one block: each cell of the
+> drawing becomes its own **FilledRegion**, so every building unit can
+> be selected on its own in Revit.
+
 > The north arrow, scale bar and credit line at the bottom of the image
 > are not imported as geometry. Only the north arrow's **position and
 > direction** are measured; the project's own symbol is placed there,

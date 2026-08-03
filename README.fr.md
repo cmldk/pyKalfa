@@ -71,6 +71,10 @@ en pixels**, avec l'échelle graphique visible.
 5. La géométrie est dessinée, puis un résumé des éléments créés
    s'affiche.
 
+> Les bâtiments mitoyens ne sont pas fusionnés en un seul bloc : chaque
+> cellule du dessin devient une **FilledRegion** distincte, donc chaque
+> unité reste sélectionnable séparément dans Revit.
+
 > La flèche du nord, l'échelle graphique et la mention de source en bas
 > de l'image ne sont pas importées comme géométrie. Seuls la **position
 > et l'orientation** de la flèche du nord sont mesurées ; le symbole
