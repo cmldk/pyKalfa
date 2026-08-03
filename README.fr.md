@@ -63,10 +63,18 @@ en pixels**, avec l'échelle graphique visible.
      cizme"* en tête de liste si vous n'en voulez pas
    - choisissez un **Filled Region Type** pour les bâtiments
    - choisissez un **Text Note Type** pour les numéros de parcelles
+   - choisissez un symbole **Generic Annotation** pour la flèche du nord
+     — sélectionnez l'entrée *"Kuzey oku ekleme"* en tête de liste pour
+     l'ignorer
 4. Le traitement d'image s'exécute derrière une barre de progression ;
    aucune question ne vous est posée pendant cette étape.
 5. La géométrie est dessinée, puis un résumé des éléments créés
    s'affiche.
+
+> La flèche du nord, l'échelle graphique et la mention de source en bas
+> de l'image ne sont pas importées comme géométrie. Seuls la **position
+> et l'orientation** de la flèche du nord sont mesurées ; le symbole
+> propre au projet est placé au même endroit, tourné dans le même sens.
 
 > Les numéros de parcelles sont lus par OCR, avec une précision
 > d'environ 80 %. Des caractères proches (G/6, A/4, B/8, S/5) peuvent
