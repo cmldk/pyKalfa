@@ -33,7 +33,10 @@ from map_decorations import detect_north_arrow
 from regularize import snap_to_dominant_axes
 from scale import compute_scale_info
 
-SIMPLIFY_TOLERANCE_M = 0.4   # gercek dunyada ~40 cm; raster "merdiven" noktalarini sadelestirir
+SIMPLIFY_TOLERANCE_M = 0.3   # gercek dunyada 30 cm; raster "merdiven" noktalarini sadelestirir
+                              # (0.4'ten dusuruldu: poligonlar cizgiye daha yakin oturuyor.
+                              #  Daha da dusurmek ters teper -- merdiven basamaklari kisa ve
+                              #  egik kenarlar olarak hayatta kalip izgaraya oturmayi bozar.)
 MIN_POINT_SPACING_M = 0.1    # bu mesafenin altindaki ardisik noktalar birlestirilir
                               # (Revit'te sifira yakin uzunlukta cizgi/loop segmenti
                               # olusmasin diye -- boylesi otomasyonlarda Revit'i
