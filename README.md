@@ -39,26 +39,35 @@ Sonraki açılışlarda kurulum tekrarlanmaz.
 
 ### Parsel/Bina Aktar
 
-| Girdi: parsel | Girdi: bina | Çıktı: Revit |
-| :---: | :---: | :---: |
-| ![Parsel görseli](assets/parsel_500.png) | ![Bina görseli](assets/bina_500.png) | ![Revit çıktısı](assets/output_revit_img.png) |
+| Girdi: bina | Girdi: parsel | Girdi: ikisi birlikte | Çıktı: Revit |
+| :---: | :---: | :---: | :---: |
+| ![Bina görseli](assets/bina.png) | ![Parsel görseli](assets/parsel.png) | ![İki katman birlikte](assets/both.png) | ![Revit çıktısı](assets/output_revit_img.png) |
 
 Kendi görselleriniz `assets/` klasöründeki bu örneklere benzer
-olmalıdır: aynı kadastro kesitinin iki katmanı, **aynı piksel
-boyutunda** ve ölçek çubuğu görünür durumda.
+olmalıdır: aynı kadastro kesitinin **aynı görünümünden** dışa
+aktarılmış üç PNG, **aynı piksel boyutunda** ve ölçek çubuğu görünür
+durumda.
+
+Üçüncü görsel (ikisi birlikte) geometri kaynağı **değildir**; iki
+katmanı birbirine hizalamak için kullanılır. Bina ve parsel görselleri
+ayrı ayrı dışa aktarıldığı için aynı kadrajı gösterdikleri garanti
+değildir, kaymış bir parsel-bina eşleşmesi de çıktıda hata gibi
+görünmez. Üçüncü görsel bu belirsizliği ortadan kaldırır; hizalama
+doğrulanamazsa uyarı verilir.
 
 1. **Plan, detay, kesit veya cephe** görünümüne geçin (3D görünümde
    çalışmaz).
 2. **pyKalfa** → **Parsel / Bina** → **Parsel/Bina Aktar**.
 3. Sırasıyla sorulan girdileri verin:
-   - parsel görselini (PNG) seçin
-   - bina görselini (PNG) seçin
+   - yalnızca **bina** katmanını içeren görseli (PNG) seçin
+   - yalnızca **parsel** katmanını içeren görseli (PNG) seçin
+   - **ikisini birlikte** içeren görseli (PNG) seçin
    - harita ölçeğinin paydasını yazın (1:500 için `500`)
    - parsel çizgileri için bir **Line Style** seçin
    - çizim çerçevesi (görüntünün dış sınırı) için ayrı bir **Line
      Style** seçin — çerçeve istemiyorsanız listenin başındaki
      *"Cerceve cizme"* seçeneğini işaretleyin
-   - binalar için bir **Filled Region Type** seçin
+   - bina birimleri için bir **Filled Region Type** seçin
    - parsel numaraları için bir **Text Note Type** seçin
    - kuzey oku için bir **Generic Annotation** sembolü seçin —
      istemiyorsanız listenin başındaki *"Kuzey oku ekleme"* seçeneğini
@@ -70,6 +79,11 @@ boyutunda** ve ölçek çubuğu görünür durumda.
 > Görselin alt kısmındaki kuzey oku, ölçek çubuğu ve künye yazısı
 > geometriye dahil edilmez. Kuzey okunun yalnızca **konumu ve yönü**
 > ölçülür; çizime projenin kendi sembolü aynı yöne çevrilerek konur.
+
+> Bitişik yapılarda (sıra ev blokları) **her birim ayrı bir Filled
+> Region** olur; aradaki bölme (parti) duvarları korunur. Komşu iki
+> birimin ortak kenarı piksel piksel aynı çizgiden geldiği için
+> aralarında boşluk kalmaz.
 
 > Parsel numaraları OCR ile okunur, doğruluk ~%80'dir. Benzer
 > karakterler (G/6, A/4, B/8, S/5) karışabilir; sonucu kaynak görselle

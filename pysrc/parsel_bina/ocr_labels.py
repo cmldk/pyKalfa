@@ -1,10 +1,10 @@
 """
 pyKalfa / Parsel-Bina - parsel numara etiketlerini (ör. "591G") OCR ile okuma.
 
-Parsel cizgileri kirmizimsi, etiketler notr gri/siyah renkte oldugu icin
-(bkz. geometry.py'deki renk ayrimi), etiketleri ayni mantikla izole edip
-EasyOCR'a veriyoruz. Boylece parsel agi/olcek cubugu/kuzey oku/"AGDP..."
-yazisi (hepsi notr olmayan renklerde) OCR'a hic girmiyor.
+Parsel cizgileri kirmizi, etiketler notr gri/siyah renkte oldugu icin
+(bkz. imaging.py: katman renkleri), etiketleri ayni mantikla izole edip
+EasyOCR'a veriyoruz. Boylece parsel agi/bina cizgileri/olcek cubugu/kuzey
+oku (hicbiri notr degil) OCR'a hic girmiyor.
 
 Notlar:
 - EasyOCR (PyTorch tabanli) agir bir bagimliliktir (~1-1.5 GB, ilk
@@ -22,35 +22,15 @@ import math
 from pathlib import Path
 
 import cv2
-import numpy as np
 
-from detect_lines import _load_on_white_background
+from imaging import text_image
 
-TEXT_COLOR_NEUTRAL_TOLERANCE = 10  # |R-G| ve |G-B| bunun altindaysa "notr" (metin) sayilir
-TEXT_MAX_BRIGHTNESS = 200          # bu parlakligin altindaki notr pikseller alinir (beyaz degil)
 UPSCALE_FACTOR = 3                 # OCR dogrulugu icin kucuk etiketleri buyutme orani
 OCR_ALLOWLIST = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ"
 MIN_CONFIDENCE = 0.15              # bu esigin altindaki okumalar (cok dusuk = gurultu) atilir
 
 
-def build_label_mask(image_path: Path) -> tuple[np.ndarray, np.ndarray]:
-    """Sadece notr gri/siyah (parsel numara etiketi) piksellerini beyaz
-    zemin uzerine bindirip dondurur -- OCR girdisi budur."""
-    image = _load_on_white_background(image_path)
-    b = image[:, :, 0].astype(np.int16)
-    g = image[:, :, 1].astype(np.int16)
-    r = image[:, :, 2].astype(np.int16)
-    neutral = (
-        (np.abs(r - g) < TEXT_COLOR_NEUTRAL_TOLERANCE)
-        & (np.abs(g - b) < TEXT_COLOR_NEUTRAL_TOLERANCE)
-        & (r < TEXT_MAX_BRIGHTNESS)
-    )
-    white_bg = np.full_like(image, 255)
-    text_only = np.where(neutral[:, :, None], image, white_bg)
-    return image, text_only
-
-
-def extract_parcel_labels(image_path: Path) -> tuple[np.ndarray, list[dict]]:
+def extract_parcel_labels(image_path: Path) -> list[dict]:
     """Parsel numara etiketlerini OCR ile okuyup liste olarak dondurur.
 
     Her etiket: okunan metin, OCR guven skoru (0-1), piksel-uzayindaki
@@ -60,9 +40,9 @@ def extract_parcel_labels(image_path: Path) -> tuple[np.ndarray, list[dict]]:
     """
     import easyocr  # agir import; sadece bu fonksiyon cagrildiginda yuklenir
 
-    image, text_only = build_label_mask(image_path)
     upscaled = cv2.resize(
-        text_only, None, fx=UPSCALE_FACTOR, fy=UPSCALE_FACTOR, interpolation=cv2.INTER_CUBIC
+        text_image(image_path), None, fx=UPSCALE_FACTOR, fy=UPSCALE_FACTOR,
+        interpolation=cv2.INTER_CUBIC,
     )
 
     reader = easyocr.Reader(["en"], gpu=False, verbose=False)
@@ -85,4 +65,4 @@ def extract_parcel_labels(image_path: Path) -> tuple[np.ndarray, list[dict]]:
                 "angle_rad_px": angle_rad_px,
             }
         )
-    return image, labels
+    return labels
