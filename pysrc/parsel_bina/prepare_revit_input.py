@@ -28,18 +28,24 @@ from __future__ import annotations
 import argparse
 import json
 import math
+from dataclasses import replace
 from pathlib import Path
 
 import cv2
 import numpy as np
 
 from align import layer_offset, shift_contours
-from geometry import extract_buildings, extract_parcel_cells, extract_parcel_lines
+from geometry import (
+    BUILDING_CLEANUP,
+    SquaringConfig,
+    extract_buildings,
+    extract_parcel_cells,
+    extract_parcel_lines,
+)
 from imaging import layer_masks
 from map_decorations import detect_north_arrow
 from matching import invert_label_match, match_buildings, match_labels, order_by_area
 from preview import render as render_preview
-from regularize import snap_to_dominant_axes
 from scale import compute_scale_info
 
 SIMPLIFY_TOLERANCE_M = 0.3   # gercek dunyada 30 cm; raster "merdiven" noktalarini sadelestirir
@@ -50,14 +56,38 @@ MIN_POINT_SPACING_M = 0.1    # bu mesafenin altindaki ardisik noktalar birlestir
                               # (Revit'te sifira yakin uzunlukta cizgi/loop segmenti
                               # olusmasin diye -- boylesi otomasyonlarda Revit'i
                               # kararsizlastirip cokertebiliyor)
+CHAMFER_TOLERANCE_FACTOR = 4  # `regularize`in atacagi pahin en fazla uzunlugu,
+                              # SIMPLIFY_TOLERANCE_M'in kati olarak (30 cm -> 1.2 m).
+                              # Bu pahlari ureten adim sadelestirmenin kendisi oldugu
+                              # icin boylari o toleransa baglidir; olculen artiklarin
+                              # medyani 0.9 m ve populasyon 1.5 m'de tukeniyor.
+                              # 1.2 m bilincli bir orta yol: artiklarin ezici cogunlugu
+                              # gider, GERCEK bir mimari pah (pan coupe, tipik olarak
+                              # 2 m+) ise esigin disinda kalir. Uzunluk buradaki tek
+                              # korumadir -- gercek bir pan coupe'nin de komsulari
+                              # diktir, yani sekil olcutu onu artiktan ayirmaz.
 
 
-def _dedupe_close_points(points: list[list[float]], min_spacing: float) -> list[list[float]]:
-    """Ardisik (ve kapanan) noktalar arasinda min_spacing'den kisa mesafe varsa birlestirir.
+def _dedupe_close_points(
+    points: list[list[float]], min_spacing: float, closed_loop: bool = True
+) -> list[list[float]]:
+    """Ardisik noktalar arasinda min_spacing'den kisa mesafe varsa birlestirir.
 
     Revit'te sifira yakin uzunlukta bir Line/CurveLoop segmenti olusturmak
     otomasyon senaryolarinda Revit'i kararsizlastirip cokertebiliyor; bu
     fonksiyon boyle noktalari kaynaktan (approxPolyDP sonrasi) temizler.
+
+    `closed_loop` iki FARKLI veri turunu ayirir ve karistirilmasi sessiz
+    bir hataya yol aciyordu:
+
+      - POLIGON (bina/parsel hucresi): kapanis ortuktur, nokta listesi son
+        koseyi ilkine baglar. Son nokta basa cok yakinsa dejenere bir
+        segment demektir ve ATILMALIDIR.
+      - POLYLINE (parsel cizgisi): segmentler ARDISIK NOKTA CIFTLERINDEN
+        acikca uretilir. Kapali bir halkada (ör. komsusu olmayan tek basina
+        bir parsel) son nokta ilkine ESITTIR ve o esitlik kapanis
+        segmentini tasir; atilirsa halkanin bir kenari hic cizilmez.
+        Revit'te "parsel kapanmiyor" olarak gorunen sey buydu.
     """
     if len(points) < 2:
         return points
@@ -66,9 +96,13 @@ def _dedupe_close_points(points: list[list[float]], min_spacing: float) -> list[
         last = result[-1]
         if math.hypot(p[0] - last[0], p[1] - last[1]) >= min_spacing:
             result.append(p)
-    # Kapanan loop'ta son nokta basa cok yakinsa son noktayi at
-    if len(result) > 2 and math.hypot(result[-1][0] - result[0][0], result[-1][1] - result[0][1]) < min_spacing:
-        result.pop()
+    if closed_loop:
+        # Kapanan loop'ta son nokta basa cok yakinsa son noktayi at
+        if len(result) > 2 and math.hypot(result[-1][0] - result[0][0], result[-1][1] - result[0][1]) < min_spacing:
+            result.pop()
+    elif result[-1] != points[-1]:
+        # Acik polyline: son nokta cizginin ucudur, kaybolmamali.
+        result[-1] = points[-1]
     return result
 
 
@@ -77,29 +111,32 @@ def _to_real_world(
     meters_per_px: float,
     feet_per_px: float,
     image_height: int,
-    square_up: bool = False,
+    simplify: bool = True,
 ) -> tuple[list[list[float]], float]:
-    """Piksel konturunu sadelestirip gercek birime (ft) cevirir.
+    """Piksel konturunu gercek birime (ft) cevirir.
 
-    `square_up=True` ise poligon ayrica kendi baskin izgarasina oturtulur
-    (bkz. regularize.py). Bina siniri gercekte duz ve cogunlukla dik
-    duvarlardan olusur; sadelestirme tek basina kenar acilarini bir-iki
-    derece kaydirip koseleri pahladigi icin dortgenler yamuk gorunur.
-    Parsel sinirlarina UYGULANMAZ: onlar dogal olarak egik ve dik acili
-    olmayan cokgenlerdir.
+    `simplify=True` ise once `approxPolyDP` uygulanir. Bu, PARSEL
+    hucreleri icindir: onlar cizilmez, yalnizca alan/eslesme tasir, yani
+    hucre basina sadelestirmenin komsu poligonlari birbirinden ayirmasi
+    sorun degildir.
+
+    BINALAR icin `simplify=False` verilir: onlarin sadelestirmesi ve
+    izgaraya oturtmasi `polygonize`dan ONCE, ag uzerinde yapilir (bkz.
+    geometry.square_network). Hucre basina islemek, iki komsu birimin
+    paylastigi duvari iki kez ve bagimsizca isleyip aralarinda bosluk
+    aciyordu -- Revit'te "bitisik binalar yapisik gelmiyor" sikayetinin
+    sebebi buydu.
 
     Konturlar alt-piksel (float32) geldigi icin `approxPolyDP` de float32
     uzerinde calisir -- int32'ye cevirmek ondalik kismi kirpip geometriyi
     yeniden bir piksel oynatirdi.
     """
     contour = contour.astype(np.float32)
-    epsilon_px = SIMPLIFY_TOLERANCE_M / meters_per_px
-    simplified = cv2.approxPolyDP(contour, epsilon_px, True).reshape(-1, 2)
-    points_px = (
-        snap_to_dominant_axes(simplified.tolist(), max_shift=epsilon_px)
-        if square_up
-        else simplified
-    )
+    if simplify:
+        epsilon_px = SIMPLIFY_TOLERANCE_M / meters_per_px
+        points_px = cv2.approxPolyDP(contour, epsilon_px, True).reshape(-1, 2)
+    else:
+        points_px = contour.reshape(-1, 2)
     vertices_ft = [
         [round(float(px) * feet_per_px, 3), round((image_height - float(py)) * feet_per_px, 3)]
         for px, py in points_px
@@ -116,12 +153,27 @@ def _parcel_lines_to_real_world(
     (ft) cevirir ve ardisik nokta ciftlerini DetailLine segmentleri olarak
     dondurur. Her fiziksel cizgi `extract_parcel_lines()` sayesinde zaten
     tam bir kez geldigi icin ekstra bir cift-cizgi birlestirmesine gerek
-    yoktur (bkz. geometry.py modul docstring'i)."""
+    yoktur (bkz. geometry.py modul docstring'i).
+
+    KAPALI HALKALAR ayri ele alinir. Komsusu olmayan tek basina bir parsel
+    (ör. bir tarlanin ortasindaki parsel) grafta hic dugum uretmez ve tek
+    bir kapali polyline olarak gelir -- ilk nokta son noktaya ESITTIR.
+    Boyle bir halkayi acik polyline gibi sadelestirmek kapanisi
+    kaybettiriyordu: `cv2.approxPolyDP` `closed=False` ile cagrildiginda
+    ust uste dusen uc noktalardan birini atiyor, geriye kapanmayan bir
+    zincir kaliyor ve parselin bir kenari Revit'e hic cizilmiyordu
+    ("1026P parseli kapanmiyor"). Cozum: halka POLIGON olarak
+    sadelestirilir (`closed=True`) ve kapanis segmenti sonda acikca geri
+    eklenir."""
     segments: list[list[list[float]]] = []
     epsilon_px = SIMPLIFY_TOLERANCE_M / meters_per_px
     for polyline in polylines_px:
-        contour = np.array(polyline, dtype=np.float32).reshape(-1, 1, 2)
-        simplified = cv2.approxPolyDP(contour, epsilon_px, False).reshape(-1, 2)
+        is_ring = len(polyline) > 3 and math.hypot(
+            polyline[0][0] - polyline[-1][0], polyline[0][1] - polyline[-1][1]
+        ) < 1e-6
+        points = polyline[:-1] if is_ring else polyline
+        contour = np.array(points, dtype=np.float32).reshape(-1, 1, 2)
+        simplified = cv2.approxPolyDP(contour, epsilon_px, is_ring).reshape(-1, 2)
         # `float()` sart: numpy float32 skalari -- float64'un aksine -- Python
         # float'inin alt sinifi DEGILDIR, dogrudan json'a verilirse
         # "not JSON serializable" hatasi alinir.
@@ -129,7 +181,11 @@ def _parcel_lines_to_real_world(
             [round(float(px) * feet_per_px, 3), round((image_height - float(py)) * feet_per_px, 3)]
             for px, py in simplified
         ]
-        vertices_ft = _dedupe_close_points(vertices_ft, MIN_POINT_SPACING_M)
+        vertices_ft = _dedupe_close_points(
+            vertices_ft, MIN_POINT_SPACING_M, closed_loop=is_ring
+        )
+        if is_ring and len(vertices_ft) > 2:
+            vertices_ft = vertices_ft + [vertices_ft[0]]
         for i in range(len(vertices_ft) - 1):
             segments.append([vertices_ft[i], vertices_ft[i + 1]])
     return segments
@@ -207,7 +263,20 @@ def prepare(
     height, width = layer_masks(parsel_path).shape
 
     _progress(20, "Bina birimleri cıkarılıyor")
-    buildings = shift_contours(extract_buildings(bina_path), tuple(alignment["offset_px"]))
+    # Sadelestirme ve izgaraya oturtma AG uzerinde, hucrelere bolunmeden
+    # once yapilir; olcegi bilen tek yer burasi oldugu icin gercek-dunya
+    # toleranslari burada piksele cevrilir.
+    epsilon_px = SIMPLIFY_TOLERANCE_M / meters_per_px
+    building_cleanup = replace(BUILDING_CLEANUP, simplify_tolerance_px=epsilon_px)
+    squaring = SquaringConfig(
+        max_shift=epsilon_px,
+        chamfer_max_length=CHAMFER_TOLERANCE_FACTOR * epsilon_px,
+        min_point_spacing=MIN_POINT_SPACING_M / meters_per_px,
+    )
+    buildings = shift_contours(
+        extract_buildings(bina_path, cleanup=building_cleanup, squaring=squaring),
+        tuple(alignment["offset_px"]),
+    )
 
     _progress(38, "Parsel hücreleri cıkarılıyor")
     parcel_cells = order_by_area(extract_parcel_cells(parsel_path))
@@ -261,7 +330,7 @@ def prepare(
     building_records = []
     for building_id, contour in enumerate(buildings):
         vertices_ft, area_m2 = _to_real_world(
-            contour, meters_per_px, feet_per_px, height, square_up=True
+            contour, meters_per_px, feet_per_px, height, simplify=False
         )
         parcel_id = building_parcel_id[building_id]
         building_records.append(

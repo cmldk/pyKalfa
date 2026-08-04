@@ -42,10 +42,23 @@ polyline_cleanup.py. Tek fark aci normalizasyonudur:
 
   - Bina duvarlari gercekte duz ve cogunlukla dik acilidir; 0/45/90'a
     yakin bir kenar raster gurultusu yuzunden birkac derece kaymissa
-    duzeltilir. (Poligonun tamami ayrica regularize.py ile kendi baskin
-    izgarasina oturtulur; buradaki duzeltme ondan once, cizgi bazinda.)
+    duzeltilir.
   - Parsel sinirlari dogal olarak egiktir; oraya aci dayatmak sinirlari
     bozar, bu yuzden `axis_tolerance_deg=0` (kapali) birakilir.
+
+## Neden geometriyi degistiren HER adim `polygonize`dan ONCE
+
+Bina katmaninda sadelestirme ve izgaraya oturtma (`square_network`)
+hucrelere bolunmeden once, AG uzerinde yapilir. Bunlar bir zamanlar
+`polygonize`dan sonra her hucreye ayri ayri uygulaniyordu; iki komsu
+birimin paylastigi duvar boylece IKI KEZ ve bagimsizca isleniyor,
+sonuclar birebir ayni cikmayinca aralarinda ince bir bosluk aciliyordu
+(olculdu: duvar paylasan 107 ciftin 6'si ayriliyor, en genis bosluk
+30 cm). Revit'te "bitisik binalar yapisik gelmiyor" sikayeti buydu.
+
+Kural sudur: her fiziksel cizgi TAM BIR KEZ islenir, hucreler o tek
+geometriyi miras alir. Ayni sebeple kucuk yuzeyler atilmaz, komsusuna
+katilir (`_absorb_slivers`) -- silmek dosemede delik acardi.
 
 Koordinatlar temizleme katmanindan sonra alt-piksel (ondalikli) doner ve
 oyle korunur: konturlar `float32`dir. `cv2.contourArea`, `pointPolygonTest`
@@ -55,6 +68,8 @@ tam sayi ister ve orada yuvarlanir.
 
 from __future__ import annotations
 
+import math
+from dataclasses import dataclass
 from pathlib import Path
 
 import cv2
@@ -66,6 +81,14 @@ from skimage.morphology import skeletonize
 
 from imaging import layer_masks
 from polyline_cleanup import CleanupConfig, Polyline, clean_polylines
+from regularize import (
+    dominant_angle,
+    edge_line,
+    rebuild_open,
+    snap_edges,
+    snap_polyline_to_axes,
+    solve_node,
+)
 
 MIN_BUILDING_AREA_PX = 40     # bu alanin altindaki hucreler gurultu sayilir
 MIN_PARCEL_AREA_PX = 150      # parsel hucreleri binadan buyuktur; kavsaklarda
@@ -171,14 +194,45 @@ def _polygonize_cells(polylines_px: list[Polyline], min_area: float) -> list[np.
     binayi da yutan dev bir dolgu olarak ciktiya girerdi (olculdu: bu
     goruntude iki tane). Gercek kesik binalarin deligi yoktur.
     """
+    faces = [cell for cell in _network_polygons(polylines_px) if not cell.interiors]
     cells = []
-    for cell in _network_polygons(polylines_px):
-        if cell.area < min_area or cell.interiors:
-            continue
+    for cell in _absorb_slivers(faces, min_area):
         contour = _to_contour(cell)
         if contour is not None:
             cells.append(contour)
     return cells
+
+
+def _absorb_slivers(faces: list[Polygon], min_area: float) -> list[Polygon]:
+    """Alan esiginin altindaki yuzeyleri ATMAK yerine komsusuna katar.
+
+    `polygonize` ciktisi bosluksuz bir doseme uretir: her yuzey komsusuyla
+    tam olarak ayni kenari paylasir. Kucuk bir yuzeyi silmek bu dosemede
+    bir DELIK acar -- ve o delik, Revit'te iki bina biriminin arasindaki
+    gozle gorunur bir bosluk olarak ortaya cikar (olculdu: kavsaklarda
+    olusan 0.01 m2'lik bir kiymigin actigi bosluk 7 cm idi).
+
+    Bu yuzden kiymik, sinirini EN UZUN paylastigi komsuya katilir; doseme
+    butun kalir, alan kaybolmaz. Hicbir komsusu olmayan kiymik gercekten
+    izole gurultudur ve atilir.
+    """
+    keep = [f for f in faces if f.area >= min_area]
+    slivers = sorted((f for f in faces if f.area < min_area), key=lambda f: f.area)
+
+    for sliver in slivers:
+        best_index, best_shared = None, 0.0
+        for index, neighbour in enumerate(keep):
+            if not sliver.intersects(neighbour):
+                continue
+            shared = sliver.intersection(neighbour).length
+            if shared > best_shared:
+                best_index, best_shared = index, shared
+        if best_index is None:
+            continue
+        merged = _valid_polygons(unary_union([keep[best_index], sliver]))
+        if merged:
+            keep[best_index] = max(merged, key=lambda p: p.area)
+    return keep
 
 
 # --- Iskelet -> cizgi grafigi ------------------------------------------------
@@ -291,6 +345,175 @@ def _trace_network(mask: np.ndarray, cleanup: CleanupConfig) -> list[Polyline]:
     return clean_polylines(_skeleton_to_polylines(skeleton), cleanup)
 
 
+@dataclass(frozen=True)
+class SquaringConfig:
+    """`square_network` esikleri; hepsi PIKSEL biriminde.
+
+    Gercek-dunya karsiliklari cagiran tarafta belirlenir (olcegi bilen
+    tek yer orasidir, bkz. prepare_revit_input)."""
+
+    max_shift: float
+    chamfer_max_length: float = 0.0
+    angle_tolerance_deg: float = 20.0
+    min_point_spacing: float = 0.0   # bu araliktan yakin ardisik noktalar birlestirilir
+
+
+def _components(polylines: list[Polyline]) -> list[list[int]]:
+    """Uc noktalarini paylasan polyline'lari bloklar halinde gruplar.
+
+    Bitisik bir yapi blogu (dis hat + ic bolme duvarlari) tek bir
+    bilesendir; izole bir bina da kendi basina bir bilesendir. Gruplama
+    NOKTA ESITLIGI uzerinden yapilir -- `polyline_cleanup`in son adimi
+    (`snap_tolerance_px`) paylasilan uclari birebir ayni koordinata
+    oturttugu icin bu guvenlidir."""
+    parent = list(range(len(polylines)))
+
+    def find(i: int) -> int:
+        while parent[i] != i:
+            parent[i] = parent[parent[i]]
+            i = parent[i]
+        return i
+
+    owner: dict[tuple[float, float], int] = {}
+    for index, polyline in enumerate(polylines):
+        for endpoint in (polyline[0], polyline[-1]):
+            key = (float(endpoint[0]), float(endpoint[1]))
+            if key in owner:
+                a, b = find(index), find(owner[key])
+                if a != b:
+                    parent[a] = b
+            else:
+                owner[key] = index
+
+    groups: dict[int, list[int]] = {}
+    for index in range(len(polylines)):
+        groups.setdefault(find(index), []).append(index)
+    return list(groups.values())
+
+
+def square_network(polylines: list[Polyline], config: SquaringConfig) -> list[Polyline]:
+    """Cizgi agini, TOPOLOJIYI BOZMADAN kendi izgarasina oturtur.
+
+    Neden hucre basina degil de ag uzerinde:
+
+    Sadelestirme ve izgaraya oturtma daha once `polygonize`dan SONRA, her
+    hucreye ayri ayri uygulaniyordu. Iki komsu hucrenin paylastigi duvar
+    boylece IKI KEZ ve birbirinden bagimsiz isleniyor, sonuclar birebir
+    ayni cikmayinca da aralarinda ince bir bosluk aciliyordu -- Revit'te
+    "bitisik binalar yapisik gelmiyor" seklinde gorunen sey buydu
+    (olculdu: 107 komsu ciftin 6'si ayriliyor, en genis bosluk 30 cm).
+
+    Ag uzerinde islenince her fiziksel cizgi TAM BIR KEZ oturtulur ve
+    hucreler o tek geometriyi miras alir; ayrilma yapisal olarak imkansiz
+    hale gelir. Dugumler (polyline uclari) sabit tutulur, sadece ic
+    noktalar oynar -- yani ag hic kopmaz.
+
+    Izgara acisi BLOK BAZINDA hesaplanir: bitisik bir yapi blogunun butun
+    duvarlari ayni dogrultuya oturur, ayri bloklar ise (kadastroda sik
+    oldugu gibi) kendi acilarini korur.
+
+    Dugumler de oynatilir ama HER DUGUM ICIN BIR KEZ: konumu, o dugumde
+    bulusan butun segmentlerin ortak cozumu olarak hesaplanir ve paylasan
+    polyline'lar ayni sayiyi kullanir (bkz. `regularize.solve_node`).
+    Dugumleri sabit tutmak da topolojiyi korurdu, ama bina koselerinin
+    buyuk cogunlugu tam bir dugumun dibindedir -- sabit tutuldugunda o
+    koseler pahli kaliyordu (olculdu: kalan pahlarin %84'u).
+    """
+    result: list[Polyline] = []
+    for group in _components(polylines):
+        members = [polylines[i] for i in group]
+        dominant = dominant_angle(members)
+        if dominant is None:
+            result.extend(members)
+            continue
+
+        # Kapali donguler (izole binalar) dugum paylasmaz; halka olarak
+        # tek adimda islenir.
+        rings = [p for p in members if _is_ring(p)]
+        chains = [p for p in members if not _is_ring(p)]
+        for polyline in rings:
+            result.append(
+                snap_polyline_to_axes(
+                    polyline,
+                    dominant=dominant,
+                    max_shift=config.max_shift,
+                    angle_tolerance_deg=config.angle_tolerance_deg,
+                    chamfer_max_length=config.chamfer_max_length,
+                )
+            )
+
+        snapped = [
+            snap_edges(p, dominant, config.angle_tolerance_deg, config.chamfer_max_length)
+            for p in chains
+        ]
+
+        # Her dugumde bulusan uc segmentlerin dogrularini topla, dugumu
+        # bir kez coz, sonra polyline'lari o dugumlerle yeniden kur.
+        incident: dict[tuple[float, float], list] = {}
+        for polyline, (edges, angles) in zip(chains, snapped):
+            if not edges:
+                continue
+            for point, edge, angle in (
+                (polyline[0], edges[0], angles[0]),
+                (polyline[-1], edges[-1], angles[-1]),
+            ):
+                incident.setdefault(_node_key(point), []).append(edge_line(edge, angle))
+
+        node_limit = config.max_shift + config.chamfer_max_length
+        moved = {
+            key: solve_node(lines, key, node_limit) for key, lines in incident.items()
+        }
+
+        for polyline, (edges, angles) in zip(chains, snapped):
+            if not edges:
+                result.append(polyline)
+                continue
+            start = moved.get(_node_key(polyline[0]), tuple(polyline[0]))
+            end = moved.get(_node_key(polyline[-1]), tuple(polyline[-1]))
+            result.append(rebuild_open(edges, angles, start, end, config.max_shift))
+
+    if config.min_point_spacing > 0:
+        result = [_drop_dense_points(p, config.min_point_spacing) for p in result]
+    return result
+
+
+def _drop_dense_points(polyline: Polyline, min_spacing: float) -> Polyline:
+    """Birbirine cok yakin ardisik noktalari teke indirir; UCLAR korunur.
+
+    Revit sifira yakin uzunlukta bir `Line`/`CurveLoop` segmentini kaldirmaz
+    (otomasyonda kararsizlasip cokebiliyor), bu yuzden boyle noktalar
+    ayiklanmak zorunda. Kritik olan bunun NEREDE yapildigi: ayni ayiklama
+    hucre basina yapildiginda, paylasilan bir duvardaki kisa segment bir
+    hucrede atilip komsusunda kaldigi icin ikisi birbirinden ayriliyordu
+    (olculdu: 2 cift, 18 cm). Ag uzerinde bir kez yapilinca iki komsu da
+    ayni sonucu miras alir."""
+    if len(polyline) < 3:
+        return polyline
+    result = [polyline[0]]
+    for point in polyline[1:-1]:
+        if math.hypot(point[0] - result[-1][0], point[1] - result[-1][1]) >= min_spacing:
+            result.append(point)
+    last = polyline[-1]
+    if (
+        len(result) > 1
+        and math.hypot(last[0] - result[-1][0], last[1] - result[-1][1]) < min_spacing
+    ):
+        result.pop()
+    result.append(last)
+    return result
+
+
+def _is_ring(polyline: Polyline) -> bool:
+    return len(polyline) > 2 and _node_key(polyline[0]) == _node_key(polyline[-1])
+
+
+def _node_key(point) -> tuple[float, float]:
+    """Dugum kimligi. Yuvarlama sart: paylasilan uclar `polyline_cleanup`
+    sonrasi ayni sayiya oturur ama kayan nokta gosteriminde son bitleri
+    farkli olabilir; ayni dugumun iki ayri kimlige dusmesi agi koparirdi."""
+    return (round(float(point[0]), 3), round(float(point[1]), 3))
+
+
 # --- Bina --------------------------------------------------------------------
 
 
@@ -372,12 +595,19 @@ def close_shapes_at_frame(mask: np.ndarray) -> np.ndarray:
 
 
 def extract_buildings(
-    image_path: Path, cleanup: CleanupConfig | None = None
+    image_path: Path,
+    cleanup: CleanupConfig | None = None,
+    squaring: SquaringConfig | None = None,
 ) -> list[np.ndarray]:
     """Her bina BIRIMI icin kapali bir kontur -> FilledRegion'a hazir.
 
     Bitisik yapilarda (sira ev bloklari) her birim ayri bir hucredir ve
     ayri bir FilledRegion olur; ic bolme (parti) duvarlari korunur.
+
+    `squaring` verilirse sadelestirilmis ag, hucrelere bolunmeden ONCE
+    kendi izgarasina oturtulur (bkz. `square_network`). Bu sira sarttir:
+    hucre basina oturtma, komsu birimlerin paylastigi duvari iki kez
+    isleyip aralarinda bosluk aciyordu.
 
     Girdi `bina.png` olmalidir (yalniz bina katmani). `both.png`'de bina
     cizgilerinin govdesi parsel cizgileri ve etiketlerle delindigi icin
@@ -386,6 +616,8 @@ def extract_buildings(
     masks = layer_masks(image_path)
     mask = close_shapes_at_frame(_closed_mask(masks.building))
     polylines = _trace_network(mask, cleanup or BUILDING_CLEANUP)
+    if squaring is not None:
+        polylines = square_network(polylines, squaring)
     return _polygonize_cells(polylines, MIN_BUILDING_AREA_PX)
 
 

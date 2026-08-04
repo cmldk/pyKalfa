@@ -110,34 +110,34 @@ PREPARE_SCRIPT = paths.pysrc_script(FEATURE, "prepare_revit_input.py")
 # Uc gorsel de ayni gorunumden disa aktarilmis olmali; ucuncusu iki
 # katmani birden icerir ve hizalama referansi olarak kullanilir.
 bina_path = forms.pick_file(
-    file_ext="png", title="1/3: Yalniz BINA katmani (bina.png)"
+    file_ext="png", title="1/3: Yalnız BİNA katmani (bina.png)"
 )
 if not bina_path:
     script.exit()
 
 parsel_path = forms.pick_file(
-    file_ext="png", title="2/3: Yalniz PARSEL katmani (parsel.png)"
+    file_ext="png", title="2/3: Yalnız PARSEL katmani (parsel.png)"
 )
 if not parsel_path:
     script.exit()
 
 both_path = forms.pick_file(
-    file_ext="png", title="3/3: IKISI BIRLIKTE - hizalama icin (both.png)"
+    file_ext="png", title="3/3: İKİSİ BİRLİKTE - hizalama icin (both.png)"
 )
 if not both_path:
     script.exit()
 
 scale_text = forms.ask_for_string(
-    default="500", prompt="Harita olcegi paydasini girin (ör. 500 -> 1:500)", title="Olcek"
+    default="500", prompt="Harita ölçeği paydasını girin (ör. 500 -> 1:500)", title="Olcek"
 )
 if not scale_text:
     script.exit()
 try:
     scale_value = float(scale_text.strip())
     if scale_value <= 0:
-        raise ValueError("olcek pozitif olmali")
+        raise ValueError("ölçek pozitif olmali")
 except ValueError:
-    forms.alert("Gecersiz olcek degeri: {!r}".format(scale_text), exitscript=True)
+    forms.alert("Geçersiz ölçek değeri: {!r}".format(scale_text), exitscript=True)
 
 # --- Stil secimleri (goruntu islemeden ONCE) --------------------------------
 # Ucu de projede ONCEDEN tanimli stiller arasindan secilir (bkz.
@@ -148,7 +148,7 @@ except ValueError:
 # ortasinda tekrar soru sorulmasin diye.
 try:
     chosen_line_style = selectors.pick_line_style(
-        doc, title="Parsel cizgileri icin line style secin"
+        doc, title="Parsel çizgileri için line style seçin"
     )
     # Cerceve = goruntunun dis siniri. Parsel cizgilerinden ayri bir style
     # sorulur (pafta cercevesi genelde farkli/kalin bir kalemdir); cerceve
