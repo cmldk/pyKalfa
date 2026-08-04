@@ -42,26 +42,36 @@ répète pas aux démarrages suivants.
 
 ### Parsel/Bina Aktar — parcelles et bâtiments
 
-| Entrée : parcelles | Entrée : bâtiments | Sortie : Revit |
-| :---: | :---: | :---: |
-| ![Image des parcelles](assets/parsel_500.png) | ![Image des bâtiments](assets/bina_500.png) | ![Résultat Revit](assets/output_revit_img.png) |
+| Entrée : bâtiments | Entrée : parcelles | Entrée : les deux calques | Sortie : Revit |
+| :---: | :---: | :---: | :---: |
+| ![Image des bâtiments](assets/bina.png) | ![Image des parcelles](assets/parsel.png) | ![Les deux calques](assets/both.png) | ![Résultat Revit](assets/output_revit_img.png) |
 
 Vos propres images doivent ressembler à ces exemples du dossier
-`assets/` : deux calques du même extrait cadastral, à la **même taille
-en pixels**, avec l'échelle graphique visible.
+`assets/` : trois PNG exportés depuis la **même vue** du même extrait
+cadastral, à la **même taille en pixels**, avec l'échelle graphique
+visible.
+
+La troisième image (les deux calques) n'est **pas** une source de
+géométrie : elle sert à caler les deux calques l'un sur l'autre. Les
+images des bâtiments et des parcelles étant exportées séparément, rien
+ne garantit qu'elles montrent le même cadrage — et une association
+parcelle-bâtiment décalée ne ressemble pas à une erreur dans le
+résultat. La troisième image lève cette ambiguïté ; si le calage ne
+peut pas être vérifié, un avertissement s'affiche.
 
 1. Placez-vous dans une vue en **plan, de détail, en coupe ou en
    élévation** (cela ne fonctionne pas en vue 3D).
 2. **pyKalfa** → **Parsel / Bina** → **Parsel/Bina Aktar**.
 3. Renseignez les entrées au fur et à mesure :
-   - sélectionnez l'image des parcelles (PNG)
-   - sélectionnez l'image des bâtiments (PNG)
+   - sélectionnez l'image contenant **uniquement les bâtiments** (PNG)
+   - sélectionnez l'image contenant **uniquement les parcelles** (PNG)
+   - sélectionnez l'image contenant **les deux calques** (PNG)
    - saisissez le dénominateur de l'échelle (`500` pour 1:500)
    - choisissez un **Line Style** pour les limites de parcelles
    - choisissez un **Line Style** distinct pour le cadre du dessin (la
      bordure extérieure de l'image) — sélectionnez l'entrée *"Cerceve
      cizme"* en tête de liste si vous n'en voulez pas
-   - choisissez un **Filled Region Type** pour les bâtiments
+   - choisissez un **Filled Region Type** pour les unités bâties
    - choisissez un **Text Note Type** pour les numéros de parcelles
    - choisissez un symbole **Generic Annotation** pour la flèche du nord
      — sélectionnez l'entrée *"Kuzey oku ekleme"* en tête de liste pour
@@ -75,6 +85,11 @@ en pixels**, avec l'échelle graphique visible.
 > de l'image ne sont pas importées comme géométrie. Seuls la **position
 > et l'orientation** de la flèche du nord sont mesurées ; le symbole
 > propre au projet est placé au même endroit, tourné dans le même sens.
+
+> Dans les îlots mitoyens, **chaque unité devient sa propre Filled
+> Region** : les murs mitoyens sont conservés. Deux unités voisines
+> partagent exactement la même arête, pixel par pixel, sans laisser de
+> vide entre elles.
 
 > Les numéros de parcelles sont lus par OCR, avec une précision
 > d'environ 80 %. Des caractères proches (G/6, A/4, B/8, S/5) peuvent
