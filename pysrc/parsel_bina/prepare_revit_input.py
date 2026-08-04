@@ -56,6 +56,10 @@ MIN_POINT_SPACING_M = 0.1    # bu mesafenin altindaki ardisik noktalar birlestir
                               # (Revit'te sifira yakin uzunlukta cizgi/loop segmenti
                               # olusmasin diye -- boylesi otomasyonlarda Revit'i
                               # kararsizlastirip cokertebiliyor)
+FRAME_OVERSHOOT_M = 1.0      # pafta kenarinin kestigi binalar cizginin bu kadar
+                              # DISINDA kapatilir; boylece dolgu cerceveyi asar ve
+                              # cizim kirpilarak cerceveye tam oturtulabilir
+                              # (bkz. geometry.extract_buildings)
 CHAMFER_TOLERANCE_FACTOR = 4  # `regularize`in atacagi pahin en fazla uzunlugu,
                               # SIMPLIFY_TOLERANCE_M'in kati olarak (30 cm -> 1.2 m).
                               # Bu pahlari ureten adim sadelestirmenin kendisi oldugu
@@ -272,9 +276,15 @@ def prepare(
         max_shift=epsilon_px,
         chamfer_max_length=CHAMFER_TOLERANCE_FACTOR * epsilon_px,
         min_point_spacing=MIN_POINT_SPACING_M / meters_per_px,
+        frame_shape=(height, width),
     )
     buildings = shift_contours(
-        extract_buildings(bina_path, cleanup=building_cleanup, squaring=squaring),
+        extract_buildings(
+            bina_path,
+            cleanup=building_cleanup,
+            squaring=squaring,
+            frame_overshoot_px=FRAME_OVERSHOOT_M / meters_per_px,
+        ),
         tuple(alignment["offset_px"]),
     )
 

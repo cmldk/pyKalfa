@@ -100,15 +100,24 @@ class _Edge:
         return ((self.start[0] + self.end[0]) / 2.0, (self.start[1] + self.end[1]) / 2.0)
 
 
-def _edges(polygon: list[tuple[float, float]]) -> list[_Edge]:
-    """Kapali poligonun kenarlari (sifir uzunluklu olanlar atilir)."""
+def _edges_indexed(polygon: list[tuple[float, float]]) -> list[tuple[int, _Edge]]:
+    """Kapali poligonun kenarlari, KAYNAK INDEKSIYLE birlikte.
+
+    Indeks sart: `locked` gibi kenar basina verilen bayraklar cagiranin
+    nokta dizisine gore numaralanir; sifir uzunluklu kenarlar atilinca
+    dizi kayar ve bayraklar yanlis kenara denk gelirdi."""
     count = len(polygon)
     result = []
     for i in range(count):
         edge = _Edge(polygon[i], polygon[(i + 1) % count])
         if edge.length >= 1e-9:
-            result.append(edge)
+            result.append((i, edge))
     return result
+
+
+def _edges(polygon: list[tuple[float, float]]) -> list[_Edge]:
+    """Kapali poligonun kenarlari (sifir uzunluklu olanlar atilir)."""
+    return [edge for _, edge in _edges_indexed(polygon)]
 
 
 def _dominant_angle(edges: list[_Edge]) -> float:
@@ -202,31 +211,65 @@ def _is_simple(points: list[tuple[float, float]]) -> bool:
     return Polygon(points).is_valid
 
 
-def dominant_angle(polylines: list[list[tuple[float, float]]]) -> float | None:
+def dominant_angle(
+    polylines: list[list[tuple[float, float]]],
+    locked: list[list[bool]] | None = None,
+) -> float | None:
     """Bir polyline kumesinin ortak baskin izgara yonu.
 
     Bir bina BLOGUNUN butun cizgileri (dis hat + ic bolme duvarlari) tek
     bir izgaraya oturur; blok bazinda tek bir aci hesaplamak, her hucreyi
     kendi basina oturtmaya gore hem daha kararlidir (daha cok kenardan
     ortalama alinir) hem de komsu hucrelerin AYNI aciya oturmasini
-    garanti eder."""
+    garanti eder.
+
+    `locked` verilirse o segmentler hesaba KATILMAZ: pafta kenarindaki
+    kapanis cizgileri binanin izgarasina ait degildir ve dahil edilirse
+    baskin aciyi kendilerine dogru cekerler."""
     edges: list[_Edge] = []
-    for polyline in polylines:
-        edges.extend(_edges_open([(float(x), float(y)) for x, y in polyline]))
+    for index, polyline in enumerate(polylines):
+        own = _edges_open([(float(x), float(y)) for x, y in polyline])
+        if locked is not None:
+            flags = locked[index]
+            own = [e for i, e in enumerate(own) if not (i < len(flags) and flags[i])]
+        edges.extend(own)
     if not edges:
         return None
     return _dominant_angle(edges)
 
 
-def _edges_open(polyline: list[tuple[float, float]]) -> list[_Edge]:
-    """Acik bir polyline'in segmentleri (kapali poligondan farkli olarak
-    son noktadan ilkine donen kenar YOKTUR)."""
+def _edges_open_indexed(polyline: list[tuple[float, float]]) -> list[tuple[int, _Edge]]:
+    """Acik polyline'in segmentleri, kaynak indeksiyle (bkz. `_edges_indexed`)."""
     result = []
     for i in range(len(polyline) - 1):
         edge = _Edge(polyline[i], polyline[i + 1])
         if edge.length >= 1e-9:
-            result.append(edge)
+            result.append((i, edge))
     return result
+
+
+def _edges_open(polyline: list[tuple[float, float]]) -> list[_Edge]:
+    """Acik bir polyline'in segmentleri (kapali poligondan farkli olarak
+    son noktadan ilkine donen kenar YOKTUR)."""
+    return [edge for _, edge in _edges_open_indexed(polyline)]
+
+
+def _apply_locks(
+    edges: list[_Edge], indices: list[int], angles: list[float],
+    aligned: list[bool], locked: list[bool] | None,
+) -> None:
+    """KILITLI segmentleri kendi dogrultusunda birakir (yerinde degistirir).
+
+    Kilitli kenar bir duvar degildir -- ornegin pafta kenarindaki kapanis
+    cizgisi. Izgaraya oturtulursa kaynakta hic olmayan bir egim kazanir ve
+    kesilmis binanin taban kenari doner. `aligned=True` isaretlenmesi ayni
+    zamanda onu pah temizliginin disinda tutar."""
+    if locked is None:
+        return
+    for position, source_index in enumerate(indices):
+        if source_index < len(locked) and locked[source_index]:
+            angles[position] = edges[position].angle
+            aligned[position] = True
 
 
 def snap_edges(
@@ -234,6 +277,7 @@ def snap_edges(
     dominant: float,
     angle_tolerance_deg: float = ANGLE_TOLERANCE_DEG,
     chamfer_max_length: float = 0.0,
+    locked: list[bool] | None = None,
 ) -> tuple[list[_Edge], list[float]]:
     """Acik bir polyline'in segmentlerini izgaraya oturtur ve pahlari atar.
 
@@ -249,14 +293,17 @@ def snap_edges(
     pahlarin %84'u). Atilan uc segment, o dugumun konumunu artik
     belirlemez; dugum bir iceriki gercek duvarin dogrultusuna oturur.
     """
-    edges = _edges_open([(float(x), float(y)) for x, y in polyline])
-    if not edges:
+    indexed = _edges_open_indexed([(float(x), float(y)) for x, y in polyline])
+    if not indexed:
         return [], []
+    indices = [i for i, _ in indexed]
+    edges = [e for _, e in indexed]
 
     tolerance = math.radians(angle_tolerance_deg)
     snapped = [_snap(e.angle, dominant, tolerance) for e in edges]
     angles = [a for a, _ in snapped]
     aligned = [ok for _, ok in snapped]
+    _apply_locks(edges, indices, angles, aligned, locked)
 
     if chamfer_max_length > 0 and len(edges) >= 3:
         dropped = set(_drop_chamfers_open(edges, aligned, chamfer_max_length))
@@ -357,6 +404,7 @@ def snap_polyline_to_axes(
     max_shift: float,
     angle_tolerance_deg: float = ANGLE_TOLERANCE_DEG,
     chamfer_max_length: float = 0.0,
+    locked: list[bool] | None = None,
 ) -> list[tuple[float, float]]:
     """Acik bir polyline'i verilen izgaraya oturtur; UCLARI SABIT tutar.
 
@@ -376,20 +424,26 @@ def snap_polyline_to_axes(
     # Kapali dongu (izole bina): baslangic noktasi da bir kosedir, halka
     # olarak islenirse o da sivrilesir.
     if _distance(polyline[0], polyline[-1]) < 1e-9:
+        # Halkanin i. kenari, girdi dizisinin i. segmentiyle ayni (son
+        # nokta ilkine esit oldugu icin sarma kenari da denk gelir), yani
+        # `locked` oldugu gibi gecirilebilir.
         ring = snap_to_dominant_axes(
             polyline[:-1], max_shift, angle_tolerance_deg, chamfer_max_length,
-            dominant=dominant,
+            dominant=dominant, locked=locked,
         )
         return list(ring) + [ring[0]]
 
-    edges = _edges_open(polyline)
-    if len(edges) < 2:
+    indexed = _edges_open_indexed(polyline)
+    if len(indexed) < 2:
         return polyline
+    indices = [i for i, _ in indexed]
+    edges = [e for _, e in indexed]
 
     tolerance = math.radians(angle_tolerance_deg)
     snapped = [_snap(e.angle, dominant, tolerance) for e in edges]
     angles = [a for a, _ in snapped]
     aligned = [ok for _, ok in snapped]
+    _apply_locks(edges, indices, angles, aligned, locked)
 
     if chamfer_max_length > 0:
         # Uc segmentlere dokunulmaz: onlari atmak dugumu oynatirdi.
@@ -444,6 +498,7 @@ def snap_to_dominant_axes(
     angle_tolerance_deg: float = ANGLE_TOLERANCE_DEG,
     chamfer_max_length: float = 0.0,
     dominant: float | None = None,
+    locked: list[bool] | None = None,
 ) -> list[tuple[float, float]]:
     """Kapali poligonu baskin izgarasina oturtur (bkz. modul docstring).
 
@@ -458,9 +513,11 @@ def snap_to_dominant_axes(
     if len(polygon) < 4:
         return polygon
 
-    edges = _edges(polygon)
-    if len(edges) < 4:
+    indexed = _edges_indexed(polygon)
+    if len(indexed) < 4:
         return polygon
+    indices = [i for i, _ in indexed]
+    edges = [e for _, e in indexed]
 
     if dominant is None:
         dominant = _dominant_angle(edges)
@@ -468,6 +525,7 @@ def snap_to_dominant_axes(
     snapped = [_snap(e.angle, dominant, tolerance) for e in edges]
     angles = [a for a, _ in snapped]
     aligned = [ok for _, ok in snapped]
+    _apply_locks(edges, indices, angles, aligned, locked)
 
     # Once pahlar temizlenmis haliyle, sonra pahlar korunarak dene; ikisi de
     # kendi uzerine katlanirsa girdiyi oldugu gibi birak (bkz. docstring).

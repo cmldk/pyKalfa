@@ -95,6 +95,16 @@ MIN_PARCEL_AREA_PX = 150      # parsel hucreleri binadan buyuktur; kavsaklarda
                                # olusan kil payi ucgenleri bu esikle elenir
 MORPH_KERNEL_SIZE = 3         # cizgideki kucuk kopukluklari kapatma cekirdegi
 
+# Sagolcumun (kuzey oku / olcek cubugu / kunye) altinda kalan cizgi
+# kopukluklarini kopruleme (bkz. `bridge_under_decorations`).
+DECORATION_DILATION_PX = 2    # sagolcumun anti-alias kenarini da bandin icine al
+DECORATION_BRIDGE_PX = 8      # bandin icinde bu yaricapla kapama yapilir; harflerin
+                               # cizgide actigi bosluktan buyuk olmali
+
+FRAME_EDGE_TOLERANCE_PX = 3.0  # bir kose pafta kenarina bu kadar yakinsa "kenarda"
+                                # sayilir (kapanis cizgisi iskeletlestikten sonra
+                                # kenardan birkac piksel iceride kalabiliyor)
+
 MAX_FRAME_GAP_RATIO = 0.4     # `close_shapes_at_frame`: kapatilabilecek en genis
                                # cerceve boslugu, goruntunun KISA kenarina oran
                                # olarak. Sabit bir piksel sayisi yanlisti: bir
@@ -113,6 +123,36 @@ def _closed_mask(mask: np.ndarray) -> np.ndarray:
     """Cizgideki kucuk kopukluklari morfolojik kapama ile giderir."""
     kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (MORPH_KERNEL_SIZE, MORPH_KERNEL_SIZE))
     return cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel)
+
+
+def bridge_under_decorations(line_mask: np.ndarray, decorations: np.ndarray) -> np.ndarray:
+    """Sagolcumlerin ORTTUGU cizgi parcalarini koprular.
+
+    Kuzey oku, olcek cubugu ve kunye yazisi ("AGDP (2024), IGN") haritanin
+    UZERINE cizilir. Renk maskesi bunlari geometriye almaz -- ama altta
+    kalan kirmizi/kahverengi piksel kaynak goruntude zaten yoktur, yani o
+    cizgide gercek bir KOPUKLUK vardir. Kapanmayan bir bina konturu ise
+    ic bolgesini disariya baglar: hucre ya hic bulunamaz ya da dis alanla
+    birlesip anlamsiz bir sekle doner (olculdu: bir kesitte kunye yazisi
+    bir binanin dis duvarini uc yerden kesiyor ve bina, pafta kenarina
+    kadar uzayan sivri bir seride donusuyordu).
+
+    Kapama YALNIZ sagolcumun kapladigi bandin icine yazilir. Butun maskeye
+    uygulanirsa cizgiler kalinlasir ve dar sokakla ayrilmis komsu binalar
+    birbirine yapisir; bant disina hic dokunulmaz.
+    """
+    if not decorations.any():
+        return line_mask
+    size = 2 * DECORATION_DILATION_PX + 1
+    band = cv2.dilate(decorations, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (size, size))) > 0
+
+    size = 2 * DECORATION_BRIDGE_PX + 1
+    bridged = cv2.morphologyEx(
+        line_mask, cv2.MORPH_CLOSE, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (size, size))
+    )
+    result = line_mask.copy()
+    result[band] = bridged[band]
+    return result
 
 
 def _valid_polygons(geometry) -> list[Polygon]:
@@ -356,6 +396,8 @@ class SquaringConfig:
     chamfer_max_length: float = 0.0
     angle_tolerance_deg: float = 20.0
     min_point_spacing: float = 0.0   # bu araliktan yakin ardisik noktalar birlestirilir
+    frame_shape: tuple[int, int] | None = None   # (yukseklik, genislik); verilirse pafta
+                                                  # kenarindaki kapanis segmentleri kilitlenir
 
 
 def _components(polylines: list[Polyline]) -> list[list[int]]:
@@ -422,16 +464,20 @@ def square_network(polylines: list[Polyline], config: SquaringConfig) -> list[Po
     result: list[Polyline] = []
     for group in _components(polylines):
         members = [polylines[i] for i in group]
-        dominant = dominant_angle(members)
+        locks = [_frame_edge_flags(p, config.frame_shape) for p in members]
+        dominant = dominant_angle(members, locks)
         if dominant is None:
             result.extend(members)
             continue
 
         # Kapali donguler (izole binalar) dugum paylasmaz; halka olarak
         # tek adimda islenir.
-        rings = [p for p in members if _is_ring(p)]
+        rings = [(p, locks[i]) for i, p in enumerate(members) if _is_ring(p)]
         chains = [p for p in members if not _is_ring(p)]
-        for polyline in rings:
+        chain_locks = [
+            locks[i] for i, p in enumerate(members) if not _is_ring(p)
+        ]
+        for polyline, lock in rings:
             result.append(
                 snap_polyline_to_axes(
                     polyline,
@@ -439,12 +485,14 @@ def square_network(polylines: list[Polyline], config: SquaringConfig) -> list[Po
                     max_shift=config.max_shift,
                     angle_tolerance_deg=config.angle_tolerance_deg,
                     chamfer_max_length=config.chamfer_max_length,
+                    locked=lock,
                 )
             )
 
         snapped = [
-            snap_edges(p, dominant, config.angle_tolerance_deg, config.chamfer_max_length)
-            for p in chains
+            snap_edges(p, dominant, config.angle_tolerance_deg, config.chamfer_max_length,
+                       locked=lock)
+            for p, lock in zip(chains, chain_locks)
         ]
 
         # Her dugumde bulusan uc segmentlerin dogrularini topla, dugumu
@@ -501,6 +549,42 @@ def _drop_dense_points(polyline: Polyline, min_spacing: float) -> Polyline:
         result.pop()
     result.append(last)
     return result
+
+
+def _frame_edge_flags(
+    polyline: Polyline, shape: tuple[int, int] | None
+) -> list[bool]:
+    """Polyline'in hangi segmentleri pafta KENARI uzerinde?
+
+    `close_shapes_at_frame`in ekledigi kapanis cizgisi bir duvar degildir;
+    pafta sinirinda kalmalidir. Izgaraya oturtma onu binanin kendi
+    izgarasina cevirdiginde kesilmis binalarin taban kenari egiliyor ve
+    Revit'te bina yamuk gorunuyordu -- kaynaktaki cizgiyle hic ilgisi
+    olmayan bir egim. Bu yuzden boyle segmentler kilitlenir: kendi
+    dogrultularinda kalirlar ve baskin aci hesabina da girmezler."""
+    if shape is None or len(polyline) < 2:
+        return [False] * max(len(polyline) - 1, 0)
+    height, width = shape
+    tolerance = FRAME_EDGE_TOLERANCE_PX
+
+    def edges_of(point) -> set[str]:
+        x, y = float(point[0]), float(point[1])
+        found = set()
+        if x <= tolerance:
+            found.add("left")
+        if x >= width - 1 - tolerance:
+            found.add("right")
+        if y <= tolerance:
+            found.add("top")
+        if y >= height - 1 - tolerance:
+            found.add("bottom")
+        return found
+
+    flags = []
+    for i in range(len(polyline) - 1):
+        # Iki uc da AYNI kenara oturuyorsa segment o kenar boyunca uzanir.
+        flags.append(bool(edges_of(polyline[i]) & edges_of(polyline[i + 1])))
+    return flags
 
 
 def _is_ring(polyline: Polyline) -> bool:
@@ -598,6 +682,7 @@ def extract_buildings(
     image_path: Path,
     cleanup: CleanupConfig | None = None,
     squaring: SquaringConfig | None = None,
+    frame_overshoot_px: float = 0.0,
 ) -> list[np.ndarray]:
     """Her bina BIRIMI icin kapali bir kontur -> FilledRegion'a hazir.
 
@@ -609,16 +694,63 @@ def extract_buildings(
     hucre basina oturtma, komsu birimlerin paylastigi duvari iki kez
     isleyip aralarinda bosluk aciyordu.
 
+    `frame_overshoot_px` verilirse pafta kenarinin kestigi binalar cizginin
+    tam UZERINDE degil, o kadar DISINDA kapatilir. Kapanis cizgisi pafta
+    cercevesiyle cakisinca Revit'te iki cizgi ust uste biniyor ve dolgu
+    cerceveye tam degmiyormus gibi gorunuyordu; disarida kapatinca dolgu
+    cerceveyi asar ve cizim kirpilarak (crop) cerceveye oturtulabilir.
+    Bu, geometri cikarildiktan SONRA yalnizca kenardaki koseleri oynatarak
+    yapilir (bkz. `_overshoot_frame_edges`); kenar disindaki noktalar
+    negatif ya da genislikten buyuk cikar -- bilincli.
+
     Girdi `bina.png` olmalidir (yalniz bina katmani). `both.png`'de bina
     cizgilerinin govdesi parsel cizgileri ve etiketlerle delindigi icin
     oradan okumak kapanmayan birimler uretir (bkz. align.py).
     """
     masks = layer_masks(image_path)
-    mask = close_shapes_at_frame(_closed_mask(masks.building))
+    mask = _closed_mask(bridge_under_decorations(masks.building, masks.decoration))
+    mask = close_shapes_at_frame(mask)
     polylines = _trace_network(mask, cleanup or BUILDING_CLEANUP)
     if squaring is not None:
         polylines = square_network(polylines, squaring)
-    return _polygonize_cells(polylines, MIN_BUILDING_AREA_PX)
+    cells = _polygonize_cells(polylines, MIN_BUILDING_AREA_PX)
+    return _overshoot_frame_edges(cells, mask.shape, frame_overshoot_px)
+
+
+def _overshoot_frame_edges(
+    cells: list[np.ndarray], shape: tuple[int, int], overshoot: float
+) -> list[np.ndarray]:
+    """Pafta kenarinda kapanan koseleri o kadar DISARI iter.
+
+    Kesilmis bir bina, cerceve cizgisinin tam UZERINDE kapaniyordu; Revit'te
+    dolgunun kenari pafta cizgisiyle cakisinca dolgu cerceveye degmiyormus
+    gibi gorunuyor. Birkac desimetre disari tasirmak bu izi kaldirir ve
+    cizim kirpilarak (crop) cerceveye tam oturtulabilir.
+
+    Tasirma maskeye DEGIL, bitmis konturlara uygulanir. Once maskeyi
+    genisletmek (kenar piksellerini disari kopyalayarak) denendi ve
+    birakildi: kopyalama murekkegi kenara DIK uzattigi icin kenari egik
+    kesen duvarlarda topolojiyi degistiriyordu -- olculdu, bir kesitte
+    sahte bir kiymik hucre dogurdu ve komsu binayi 134 m2'den 318 m2'ye
+    sisirdi. Yalnizca kenardaki koseleri oynatmak ise cerceve icindeki
+    geometriyi bit bit ayni birakir; degisen tek sey kapanis kenaridir.
+    """
+    if overshoot <= 0:
+        return cells
+    height, width = shape
+    result = []
+    for contour in cells:
+        points = contour.reshape(-1, 2).copy()
+        on_left = points[:, 0] <= FRAME_EDGE_TOLERANCE_PX
+        on_right = points[:, 0] >= width - 1 - FRAME_EDGE_TOLERANCE_PX
+        on_top = points[:, 1] <= FRAME_EDGE_TOLERANCE_PX
+        on_bottom = points[:, 1] >= height - 1 - FRAME_EDGE_TOLERANCE_PX
+        points[on_left, 0] -= overshoot
+        points[on_right, 0] += overshoot
+        points[on_top, 1] -= overshoot
+        points[on_bottom, 1] += overshoot
+        result.append(points.reshape(-1, 1, 2))
+    return result
 
 
 # --- Parsel ------------------------------------------------------------------
@@ -634,7 +766,8 @@ def extract_parcel_lines(
     style'iyla ayrica cizilir (bkz. prepare_revit_input._image_frame_lines).
     """
     masks = layer_masks(image_path)
-    return _trace_network(_closed_mask(masks.parcel), cleanup or PARCEL_CLEANUP)
+    mask = _closed_mask(bridge_under_decorations(masks.parcel, masks.decoration))
+    return _trace_network(mask, cleanup or PARCEL_CLEANUP)
 
 
 def extract_parcel_cells(
@@ -653,11 +786,58 @@ def extract_parcel_cells(
     baglanir ve iskelet grafigi butun olarak izlenir.
     """
     masks = layer_masks(image_path)
-    mask = _closed_mask(masks.parcel)
+    mask = _closed_mask(bridge_under_decorations(masks.parcel, masks.decoration))
     height, width = mask.shape
     cv2.rectangle(mask, (0, 0), (width - 1, height - 1), 255, 1)
     polylines = _trace_network(mask, cleanup or PARCEL_CLEANUP)
     return _polygonize_cells(polylines, MIN_PARCEL_AREA_PX)
+
+
+def enclosed_coverage(image_path: Path, cells: list[np.ndarray]) -> dict:
+    """Kaynakta KAPALI kalan alanin ne kadari cikarildi? (tani olcutu)
+
+    Bina cizgileri kapali konturlardir, yani bir binanin ici arka planin
+    disariya BAGLANMAYAN bir bilesenidir -- bunu tespit etmek icin
+    geometriye hic gerek yok, basit bir baglanti analizi yeter. Cikarilan
+    hucreler bu alani kapatmiyorsa boru hattinda bir yerde kayip var
+    demektir.
+
+    Bu olcut, gozle fark edilmesi zor gerilemeleri sayiya dokuyor: ornegin
+    izgaraya oturtma pafta kenarindaki kapanis cizgisini dondurdugunde bir
+    binanin %41'i sessizce kayboluyordu (kalan parca "ucgen bir yapiyla
+    ayrilmis" gibi gorunuyordu). Kapsama orani o hatayi tek bakista
+    gosterir.
+    """
+    masks = layer_masks(image_path)
+    mask = _closed_mask(bridge_under_decorations(masks.building, masks.decoration))
+    height, width = mask.shape
+
+    background = (mask == 0).astype(np.uint8)
+    count, labels = cv2.connectedComponents(background, connectivity=4)
+
+    # Pafta KENARINA degen hicbir bolge "kapali" sayilmaz. Kenara degen bir
+    # bosluk (ör. iki binanin arasindaki sokak) goruntu icinde kapanmaz;
+    # onu bina saymak yanlis olur. Yalnizca dort bir yani murekkeple
+    # cevrili bolgeler olcute girer -- bunlar tanim geregi bina icidir.
+    border = np.zeros(labels.shape, dtype=bool)
+    border[0, :] = border[-1, :] = True
+    border[:, 0] = border[:, -1] = True
+    open_labels = set(np.unique(labels[border & (background > 0)]).tolist())
+
+    enclosed = (background > 0) & ~np.isin(labels, list(open_labels))
+
+    covered = np.zeros((height, width), dtype=np.uint8)
+    if cells:
+        cv2.drawContours(covered, [np.round(c).astype(np.int32) for c in cells], -1, 255, cv2.FILLED)
+
+    total = int(enclosed.sum())
+    inside = int((enclosed & (covered > 0)).sum())
+    return {
+        "enclosed_px": total,
+        "covered_px": inside,
+        "ratio": (inside / total) if total else 1.0,
+        "regions": count - 1,
+    }
 
 
 def main() -> None:
@@ -673,6 +853,12 @@ def main() -> None:
     lines = extract_parcel_lines(args.parsel)
     print(f"bina:   {len(buildings)} birim konturu")
     print(f"parsel: {len(cells)} hucre, {len(lines)} cizgi polyline'i")
+
+    coverage = enclosed_coverage(args.bina, buildings)
+    print(
+        "kapali alan kapsamasi: %.1f%% (%d/%d px)"
+        % (100 * coverage["ratio"], coverage["covered_px"], coverage["enclosed_px"])
+    )
 
 
 if __name__ == "__main__":
