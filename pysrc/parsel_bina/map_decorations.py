@@ -1,20 +1,24 @@
 """
-pyKalfa / Parsel-Bina - harita sagolcumleri: kuzey oku, olcek cubugu, kunye
+pyKalfa / Parsel-Bina - harita sagolcumleri: kuzey oku ve olcek cubugu
 
-Kadastro kesitinin uzerinde parsel/bina geometrisine AIT OLMAYAN birkac
-sagolcum bulunur: kuzey oku, olcek cubugu, "20 m" ve kunye yazisi. Hepsi
-lacivert tonundadir; parsel cizgileri kirmizimsi, bina cizgileri kirmizi,
-parsel numaralari ise notr gri/siyahtir. Yani renk, bu ogeleri geometriden
-ayirmak icin yeterli ve basit bir olcuttur.
+Kadastro kesitinin uzerinde geometriye AIT OLMAYAN birkac sagolcum
+bulunur: kuzey oku, olcek cubugu, "10 m" ve kunye yazisi. Hepsi lacivert
+tonundadir (bkz. imaging.py), yani renk bu ogeleri geometriden ayirmak
+icin yeterli ve basit bir olcuttur -- geometri maskeleri onlari zaten hic
+icermez.
 
-Parsel katmani (renk bazli kirmizimsi maske) ve OCR (notr renk maskesi)
-bu ogeleri zaten disarida birakiyordu; bina katmani ise grayscale esikleme
-kullandigi icin kuzey okunu ve olcek cubugunu "bina" sanıyordu. Bu modul o
-ayiklamayi tek yerde toplar.
+Ikisi de ISE YARAR bilgidir, bu yuzden ayiklanmakla kalmaz olculur de:
 
-Kuzey oku ayrica ISE YARAR bir bilgidir: konumu ve yonu olculup Revit'e
-bir aciklama sembolu (annotation symbol) olarak birebir ayni yonde
-yerlestirilebilir.
+  - kuzey oku -> konumu ve yonu; Revit'te projenin KENDI kuzey oku
+    sembolu ayni yone cevrilerek yerlestirilir.
+  - olcek cubugu -> piksel uzunlugu; olcek kalibrasyonunun temeli
+    (bkz. scale.py).
+
+Ikisi de ayni lacivert bilesen kumesinden gelir ve birbirinden SEKILLE
+ayrilir: olcek cubugu dolu (fill ~1), uzun ve ince bir dikdortgendir; ok
+degildir. Bu yuzden ikisinin tespiti tek modulde durur -- ayri modullerde
+olduklarinda ayni renk esikleri iki kez, birbirinden bagimsiz sekilde
+tanimlanmis oluyordu.
 """
 
 from __future__ import annotations
@@ -25,102 +29,70 @@ from pathlib import Path
 import cv2
 import numpy as np
 
-from detect_lines import _load_on_white_background
+from imaging import decoration_mask
 
-# B kanali G/R'nin en az bu kadar uzerindeyse "lacivert sagolcum" sayilir.
-BLUISH_CHANNEL_MARGIN = 20
+# Olcek cubugu olcutu: dolu, uzun/ince, yeterince genis bir dikdortgen.
+BAR_MIN_FILL_RATIO = 0.8
+BAR_MIN_ASPECT = 3.0
+BAR_MIN_WIDTH = 25
+BAR_MIN_AREA = 150
 
-# Sagolcumlerin anti-alias kenarlari lacivert esigini gecemeyecek kadar
-# aciktir ama grayscale maskede hala "cizgi" sayilir; maskeden silerken bu
-# kadar piksel genisletilir ki geride ok bicimli bir halka kalmasin.
-DECORATION_DILATION_PX = 2
-
-# Sagolcum haritanin ustunu ORTER: olcek cubugunun altindan gecen bina
-# cizgisi kaynak goruntude zaten yoktur, silme sonrasi o cizgide bir
-# kopukluk kalir ve bina kapanmaz. Silinen bandin ICINDE bu yaricapla
-# morfolojik kapama yapilarak kopukluk kopruleni r (bandin disina
-# dokunulmaz). Bandin kalinligindan (cubuk ~10 px + genisletme) buyuk
-# olmalidir.
-DECORATION_BRIDGE_PX = 8
-
-# Kuzey oku adayi icin en kucuk bilesen alani (px). Altindakiler "20 m"/"N"
+# Kuzey oku adayi icin en kucuk bilesen alani (px). Altindakiler "10 m"/"N"
 # gibi metin parcalari ya da gurultudur.
 MIN_ARROW_AREA = 150
 
-# Olcek cubugu: dolu (fill ~1) ve uzun/ince bir dikdortgen. Kuzey oku
-# adaylarindan bu olcutle elenir.
-BAR_MIN_FILL_RATIO = 0.9
-BAR_MIN_ASPECT = 3.0
+
+def _components(image_path: Path):
+    mask = decoration_mask(image_path)
+    return cv2.connectedComponentsWithStats(mask, connectivity=8)
 
 
-def decoration_mask(image: np.ndarray) -> np.ndarray:
-    """Lacivert sagolcum (kuzey oku, olcek cubugu, kunye) piksellerinin
-    ikili maskesi."""
-    b = image[:, :, 0].astype(np.int16)
-    g = image[:, :, 1].astype(np.int16)
-    r = image[:, :, 2].astype(np.int16)
-    return ((b - np.maximum(g, r)) > BLUISH_CHANNEL_MARGIN).astype(np.uint8) * 255
+def _is_scale_bar(width: int, height: int, area: int) -> bool:
+    if area < BAR_MIN_AREA or width < BAR_MIN_WIDTH or height == 0:
+        return False
+    return (area / float(width * height)) >= BAR_MIN_FILL_RATIO and (width / float(height)) >= BAR_MIN_ASPECT
 
 
-def strip_decorations(image: np.ndarray, line_mask: np.ndarray) -> np.ndarray:
-    """Cizgi maskesinden harita sagolcumlerini siler.
+def detect_scale_bar_px(image_path: Path) -> int:
+    """Dolu lacivert olcek cubugunun piksel genisligini bulur.
 
-    Lacivert cekirdek maskesi `DECORATION_DILATION_PX` kadar genisletilerek
-    cikarilir: cekirdegi oldugu gibi cikarmak, sagolcumun anti-alias
-    kenarindan geriye ayni bicimde ince bir halka birakir ve o halka bir
-    sonraki adimda "bina" olarak konturlanir.
-
-    Sagolcum haritanin ustunu ORTTUGU icin altindan gecen bina cizgisi de
-    silinmis olur; bu yuzden silinen bandin icinde morfolojik kapama ile
-    kopukluk kopruleni r. Kapama SADECE bandin icine yazilir -- haritanin
-    geri kalaninda cizgileri kalinlastirip komsu binalari birbirine
-    yapistirmamasi icin.
+    Metin parcalari ve kuzey oku sekil olcutuyle elenir; birden fazla aday
+    kalirsa en genisi alinir (cubuk, kunye harflerinden her zaman uzundur).
     """
-    decorations = decoration_mask(image)
-    if DECORATION_DILATION_PX > 0:
-        size = 2 * DECORATION_DILATION_PX + 1
-        kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (size, size))
-        decorations = cv2.dilate(decorations, kernel)
-
-    cleaned = line_mask.copy()
-    band = decorations > 0
-    cleaned[band] = 0
-
-    if DECORATION_BRIDGE_PX > 0:
-        size = 2 * DECORATION_BRIDGE_PX + 1
-        kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (size, size))
-        bridged = cv2.morphologyEx(cleaned, cv2.MORPH_CLOSE, kernel)
-        cleaned[band] = bridged[band]
-    return cleaned
+    num_labels, _, stats, _ = _components(image_path)
+    widths = [
+        stats[i, cv2.CC_STAT_WIDTH]
+        for i in range(1, num_labels)
+        if _is_scale_bar(stats[i, cv2.CC_STAT_WIDTH], stats[i, cv2.CC_STAT_HEIGHT], stats[i, cv2.CC_STAT_AREA])
+    ]
+    if not widths:
+        raise RuntimeError(
+            "Olcek cubugu tespit edilemedi: goruntude lacivert, dolu ve uzun bir "
+            "cubuk bulunamadi. Kaynak gorsel olcek cubugunu iceriyor mu?"
+        )
+    return int(max(widths))
 
 
 def detect_north_arrow(image_path: Path) -> dict | None:
     """Kuzey okunun piksel merkezini ve gosterdigi yonu bulur.
 
-    Aday: lacivert bilesenlerin en buyugu; olcek cubugu (dolu, uzun/ince
-    dikdortgen) elenir. Yon, bilesenin ana ekseni (PCA) uzerinde merkeze
-    EN UZAK ucun yonudur -- ucgen/ok bicimlerinde tepe noktasi merkeze
-    tabandan daha uzaktir (ucgende 2/3h'ye karsi 1/3h), bu yuzden bu olcut
-    "kutle agirligi" gibi olculere gore bicime daha az duyarlidir.
+    Aday: olcek cubugu elendikten sonra kalan en buyuk lacivert bilesen.
+    Yon, bilesenin ana ekseni (PCA) uzerinde merkeze EN UZAK ucun
+    yonudur -- ucgen/ok bicimlerinde tepe noktasi merkeze tabandan daha
+    uzaktir (ucgende 2/3h'ye karsi 1/3h), bu yuzden bu olcut "kutle
+    agirligi" gibi olculere gore bicime daha az duyarlidir.
 
     `rotation_deg`: yukari bakan bir sembolun ayni yone donmesi icin
     gereken aci (CCW pozitif, Revit'in Z ekseni etrafinda donusuyle ayni).
     Ok bulunamazsa None doner.
     """
-    image = _load_on_white_background(image_path)
-    mask = decoration_mask(image)
-    num_labels, labels, stats, _ = cv2.connectedComponentsWithStats(mask, connectivity=8)
+    num_labels, labels, stats, _ = _components(image_path)
 
-    best = None
-    best_area = 0
+    best, best_area = None, 0
     for label_id in range(1, num_labels):
         _, _, w, h, area = stats[label_id]
-        if area < MIN_ARROW_AREA:
+        if area < MIN_ARROW_AREA or _is_scale_bar(w, h, area):
             continue
-        fill_ratio = area / float(w * h)
-        aspect = max(w, h) / float(max(min(w, h), 1))
-        if fill_ratio > BAR_MIN_FILL_RATIO and aspect >= BAR_MIN_ASPECT:
-            continue  # olcek cubugu
         if area > best_area:
             best, best_area = label_id, area
     if best is None:
@@ -148,9 +120,14 @@ def detect_north_arrow(image_path: Path) -> dict | None:
 def main() -> None:
     import argparse
 
-    parser = argparse.ArgumentParser(description="Kuzey oku tespiti (tani/debug amacli)")
+    parser = argparse.ArgumentParser(description="Kuzey oku / olcek cubugu tespiti (tani/debug amacli)")
     parser.add_argument("--image", type=Path, default=Path("assets/parsel.png"))
     args = parser.parse_args()
+
+    try:
+        print("Olcek cubugu: {} px".format(detect_scale_bar_px(args.image)))
+    except RuntimeError as ex:
+        print("Olcek cubugu: {}".format(ex))
 
     arrow = detect_north_arrow(args.image)
     if arrow is None:

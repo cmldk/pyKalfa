@@ -39,26 +39,34 @@ shows a progress bar. It does not run again on later startups.
 
 ### Parsel/Bina Aktar — parcels and buildings
 
-| Input: parcels | Input: buildings | Output: Revit |
-| :---: | :---: | :---: |
-| ![Parcel image](assets/parsel_500.png) | ![Building image](assets/bina_500.png) | ![Revit output](assets/output_revit_img.png) |
+| Input: buildings | Input: parcels | Input: both layers | Output: Revit |
+| :---: | :---: | :---: | :---: |
+| ![Building image](assets/bina.png) | ![Parcel image](assets/parsel.png) | ![Both layers](assets/both.png) | ![Revit output](assets/output_revit_img.png) |
 
-Your own images should look like these examples in `assets/`: two layers
-of the same cadastral extract, at the **same pixel size**, with the
-scale bar visible.
+Your own images should look like these examples in `assets/`: three PNGs
+exported from the **same view** of the same cadastral extract, at the
+**same pixel size**, with the scale bar visible.
+
+The third image (both layers) is **not** a source of geometry; it is
+used to align the two layers with each other. The building and parcel
+images are exported separately, so there is no guarantee they show the
+same frame — and a shifted parcel-to-building match does not look like
+an error in the output. The third image removes that ambiguity; if the
+alignment cannot be verified you get a warning.
 
 1. Switch to a **plan, detail, section or elevation** view (it does not
    work in 3D views).
 2. **pyKalfa** → **Parsel / Bina** → **Parsel/Bina Aktar**.
 3. Provide the inputs as they are requested:
-   - select the parcel image (PNG)
-   - select the building image (PNG)
+   - select the image with the **buildings only** (PNG)
+   - select the image with the **parcels only** (PNG)
+   - select the image with **both layers** (PNG)
    - enter the map scale denominator (`500` for 1:500)
    - pick a **Line Style** for parcel boundaries
    - pick a separate **Line Style** for the drawing frame (the outer
      border of the image) — choose the *"Cerceve cizme"* entry at the
      top of the list if you do not want a frame
-   - pick a **Filled Region Type** for buildings
+   - pick a **Filled Region Type** for building units
    - pick a **Text Note Type** for parcel numbers
    - pick a **Generic Annotation** symbol for the north arrow — choose
      the *"Kuzey oku ekleme"* entry at the top of the list to skip it
@@ -70,6 +78,10 @@ scale bar visible.
 > are not imported as geometry. Only the north arrow's **position and
 > direction** are measured; the project's own symbol is placed there,
 > turned the same way.
+
+> In terraced blocks **each unit becomes its own Filled Region**, so the
+> party walls between units are preserved. Two neighbouring units share
+> the exact same edge, pixel for pixel, so no gap is left between them.
 
 > Parcel numbers are read with OCR, which is about 80% accurate. Similar
 > characters (G/6, A/4, B/8, S/5) may be confused — compare the result

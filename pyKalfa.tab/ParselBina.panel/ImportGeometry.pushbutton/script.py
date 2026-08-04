@@ -1,8 +1,16 @@
 # -*- coding: utf-8 -*-
-"""pyKalfa / Parsel-Bina Aktar: parsel.png + bina.png -> DetailLine + FilledRegion
+"""pyKalfa / Parsel-Bina Aktar: 3 PNG -> DetailLine + FilledRegion
 
-Tum girdiler kullanicidan Revit icinden alinir: parsel.png, bina.png,
-harita olcegi (ör. 1000 = 1:1000), line style ve filled region type.
+Tum girdiler kullanicidan Revit icinden alinir: UC gorsel (bina.png,
+parsel.png, both.png), harita olcegi (ör. 1000 = 1:1000), line style ve
+filled region type.
+
+Ucuncu gorsel (`both.png` -- iki katman ust uste) geometri kaynagi
+DEGILDIR, yalnizca hizalama referansidir: `bina.png` ile `parsel.png`
+ayri ayri disa aktarildigi icin ayni kadraji gosterdikleri garanti
+degildir ve kaymis bir parsel-bina eslesmesi ciktida hata gibi gorunmez.
+Iki katman `both.png` uzerinden birbirine hizalanir; hizalama
+dogrulanamazsa kullaniciya uyari gosterilir (bkz. pysrc/parsel_bina/align.py).
 
 Bu buton sadece KENDI is akisini icerir; ortak isler (yol bulma, alt-surec
 calistirma, `env/` kurulumu, stil sectirme) `lib/pykalfa/` altindaki
@@ -23,7 +31,9 @@ Parsel sinirlari: her segment ayri bir DetailCurve (LineStyle projeden
 secilir). Goruntunun dis siniri (cerceve) ayrica, parsel cizgilerinden
 FARKLI bir line style ile 4 DetailCurve olarak cizilir -- boylece cizim
 Revit'e cerceveli gider; kullanici istemezse bu adim atlanabilir. Bina:
-her biri ayri bir FilledRegion (FilledRegionType projeden secilir). Parsel numara etiketleri (ör. "591G", OCR ile okunur): her biri
+her BIRIM ayri bir FilledRegion (FilledRegionType projeden secilir);
+bitisik yapilarda ic bolme (parti) duvarlari korunur.
+Parsel numara etiketleri (ör. "568C", OCR ile okunur): her biri
 ayri bir TextNote (TextNoteType projeden secilir), okunan dönüş acisina
 gore dondurulur. Ucu de proje icinde ONCEDEN VAR OLAN stiller arasindan,
 script calisirken secilir -- hicbir isim koda gomulmez (proje sablonuna
@@ -97,12 +107,24 @@ bootstrap.ensure_env()
 OUTPUT_DIR = paths.output_dir()
 PREPARE_SCRIPT = paths.pysrc_script(FEATURE, "prepare_revit_input.py")
 
-parsel_path = forms.pick_file(file_ext="png", title="parsel.png dosyasini secin")
+# Uc gorsel de ayni gorunumden disa aktarilmis olmali; ucuncusu iki
+# katmani birden icerir ve hizalama referansi olarak kullanilir.
+bina_path = forms.pick_file(
+    file_ext="png", title="1/3: Yalniz BINA katmani (bina.png)"
+)
+if not bina_path:
+    script.exit()
+
+parsel_path = forms.pick_file(
+    file_ext="png", title="2/3: Yalniz PARSEL katmani (parsel.png)"
+)
 if not parsel_path:
     script.exit()
 
-bina_path = forms.pick_file(file_ext="png", title="bina.png dosyasini secin")
-if not bina_path:
+both_path = forms.pick_file(
+    file_ext="png", title="3/3: IKISI BIRLIKTE - hizalama icin (both.png)"
+)
+if not both_path:
     script.exit()
 
 scale_text = forms.ask_for_string(
@@ -167,8 +189,9 @@ except Exception as ex:
 logger.info("Goruntu isleme baslatiliyor (olcek 1:{})...".format(int(scale_value)))
 
 prepare_args = [
-    "--parsel", parsel_path,
     "--bina", bina_path,
+    "--parsel", parsel_path,
+    "--both", both_path,
     "--scale", str(scale_value),
     "--output-dir", OUTPUT_DIR,
 ]
@@ -250,6 +273,21 @@ logger.info("revit_input.json yuklendi: {} parsel, {} bina, {} etiket".format(
 ))
 if data.get("label_warning"):
     logger.info("Etiket uyarisi: {}".format(data["label_warning"]))
+
+# Hizalama dogrulanamadiysa parsel-bina eslesmesi sessizce yanlis olabilir
+# -- ciktida hata gibi gorunmeyen tek sorun budur, bu yuzden kullaniciya
+# sorulur. Geometri yine de dogru cizilir; supheli olan yalnizca hangi
+# binanin hangi parsele ait sayildigidir.
+alignment = data.get("alignment") or {}
+if alignment.get("warning"):
+    logger.info("Hizalama uyarisi: {}".format(alignment["warning"]))
+    if not forms.alert(
+        "{}\n\nYine de devam edilsin mi?".format(alignment["warning"]),
+        title="pyKalfa - hizalama",
+        yes=True,
+        no=True,
+    ):
+        script.exit()
 
 labels = data.get("labels") or []
 if labels and chosen_text_note_type is None:
@@ -395,17 +433,20 @@ except Exception as ex:
     script.exit()
 
 
-# Basari sonrasi devir-teslim dosyalarini temizle: bunlar sadece Python
-# venv <-> Revit arasindaki gecici ara format, her calistirmada zaten
-# yeniden uretiliyor -- kalici olarak saklanmasina gerek yok. Diger eski
-# debug ciktilarina (mask/edges/contours vb.) dokunulmaz.
+# Basari sonrasi ara format dosyasini temizle: `revit_input.json` sadece
+# Python venv <-> Revit arasindaki devir-teslim bicimi ve her calistirmada
+# yeniden uretiliyor.
+#
+# `revit_input_preview.png` BILEREK BIRAKILIR: cizimin dogrulugu (hangi
+# bina hangi parsele dustu, hizalama tuttu mu) Revit'e bakarak degil bu
+# gorsele bakarak hizlica denetlenebiliyor. Her calistirmada ustune
+# yazilir, yani birikmez.
 preview_path = os.path.join(OUTPUT_DIR, "revit_input_preview.png")
-for path in (json_path, preview_path):
-    try:
-        if os.path.isfile(path):
-            os.remove(path)
-    except Exception as ex:
-        logger.debug("Gecici dosya silinemedi ({}): {}".format(path, ex))
+try:
+    if os.path.isfile(json_path):
+        os.remove(json_path)
+except Exception as ex:
+    logger.debug("Gecici dosya silinemedi ({}): {}".format(json_path, ex))
 
 summary = "Parsel cizgisi: {} olusturuldu, {} atlandi\n".format(created_lines, skipped_lines)
 if chosen_frame_style is not None:
@@ -413,9 +454,11 @@ if chosen_frame_style is not None:
         created_frame_lines, skipped_frame_lines
     )
 summary += (
-    "Bina (filled region): {} olusturuldu, {} atlandi\n"
-    "Parsel etiketi (text): {} olusturuldu, {} atlandi".format(
-        created_regions, skipped_regions, created_labels, skipped_labels
+    "Bina blogu (filled region): {} olusturuldu, {} atlandi\n"
+    "Parsel etiketi (text): {} olusturuldu, {} atlandi\n"
+    "Parseliyle eslesen bina: {}/{}".format(
+        created_regions, skipped_regions, created_labels, skipped_labels,
+        data.get("matched_building_count", 0), data.get("building_count", 0),
     )
 )
 if chosen_north_symbol is not None:
@@ -425,4 +468,5 @@ if chosen_north_symbol is not None:
         )
     else:
         summary += "\nKuzey oku: goruntude bulunamadi"
+summary += "\n\nDogrulama gorseli:\n{}".format(preview_path)
 forms.alert(summary)

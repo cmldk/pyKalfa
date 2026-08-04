@@ -1,21 +1,26 @@
 """
-pyKalfa / Parsel-Bina - Faz 3: pyRevit icin hazir ara format
+pyKalfa / Parsel-Bina - pyRevit icin hazir ara format
 
-geometry.py'den gelen temiz (tekil) parsel/bina konturlarini alir,
-scale.py ile hesaplanan olcege gore gercek dunya birimine (feet, Revit'in
-internal birimi) cevirir, piksel Y-eksenini (asagi artan) CAD/Revit
-Y-eksenine (yukari artan) cevirir ve parsel-bina iliskisini (Faz 2 mantigi,
-artik tekil/duplikasyonsuz konturlarla) yeniden hesaplayip tek bir JSON
-dosyasinda toplar.
+Uc gorseli alir, katman katman geometriye cevirir ve tek bir JSON'da
+toplar. Girdilerin is bolumu:
 
-Not: parsel.png ve bina.png ayni kadastro kesitinin katmanlari oldugundan
-(ayni piksel boyutu = ortak referans, bkz. Faz 2), olcek SADECE parsel
-goruntusunden bir kez hesaplanip her iki katmana da uygulanir; her katman
-icin ayri ayri cubuk tespiti yapmak, anti-alias kaynakli 1 piksellik
-farklarla iki katman arasinda tutarsiz bir m/px oranina yol acar.
+    bina.png    -> bina birimleri (FilledRegion)
+    parsel.png  -> parsel cizgileri (DetailLine), parsel hucreleri,
+                   numara etiketleri (OCR), olcek cubugu, kuzey oku, cerceve
+    both.png    -> YALNIZ hizalama referansi (bkz. align.py)
+
+`both.png`'den hic geometri okunmaz: iki katman ust uste cizildigi icin
+orada bina cizgilerinin govdesi parsel cizgileri ve etiketlerle delinir,
+binalarin altinda kalan parsel cizgileri de gorunmez. Gorevi tek: iki
+kaynagin birbirine gore kaymasini olcmek, boylece parsel-bina eslesmesi
+"iki gorsel zaten hizalidir" varsayimina dayanmasin.
+
+Cikti karesi `parsel.png`'dir: butun koordinatlar onun piksel karesinde
+uretilir, bina konturlari oraya olculen kaymayla tasinir. Olcek de tek bir
+goruntuden (parsel.png) bir kez hesaplanip her katmana uygulanir.
 
 Kullanim:
-    env/Scripts/python.exe pysrc/parsel_bina/prepare_revit_input.py --scale 1000
+    env/Scripts/python.exe pysrc/parsel_bina/prepare_revit_input.py --scale 500
 """
 
 from __future__ import annotations
@@ -28,8 +33,12 @@ from pathlib import Path
 import cv2
 import numpy as np
 
-from geometry import extract_buildings, extract_parcel_lines, extract_parcels
+from align import layer_offset, shift_contours
+from geometry import extract_buildings, extract_parcel_cells, extract_parcel_lines
+from imaging import layer_masks
 from map_decorations import detect_north_arrow
+from matching import invert_label_match, match_buildings, match_labels, order_by_area
+from preview import render as render_preview
 from regularize import snap_to_dominant_axes
 from scale import compute_scale_info
 
@@ -41,26 +50,6 @@ MIN_POINT_SPACING_M = 0.1    # bu mesafenin altindaki ardisik noktalar birlestir
                               # (Revit'te sifira yakin uzunlukta cizgi/loop segmenti
                               # olusmasin diye -- boylesi otomasyonlarda Revit'i
                               # kararsizlastirip cokertebiliyor)
-
-FRAME_COLOR = (120, 120, 120)    # BGR - gri
-NORTH_COLOR = (110, 60, 20)      # BGR - lacivert (kaynak goruntudeki kuzey oku rengi)
-NORTH_MARKER_PX = 45             # onizlemede kuzey yonu okunun uzunlugu
-PARCEL_COLOR = (0, 140, 255)     # BGR - turuncu
-BUILDING_COLOR = (255, 120, 0)   # BGR - mavi
-MATCHED_FILL = (0, 200, 0)
-UNMATCHED_FILL = (0, 0, 220)
-FILL_ALPHA = 0.35
-LINE_THICKNESS = 2
-LABEL_HIGH_CONF_COLOR = (120, 0, 120)   # BGR - mor (guven >= 0.5)
-LABEL_LOW_CONF_COLOR = (0, 0, 0)        # BGR - siyah (guven < 0.5, supheli okuma)
-
-
-def _centroid(contour: np.ndarray) -> tuple[float, float]:
-    m = cv2.moments(contour)
-    if m["m00"] != 0:
-        return m["m10"] / m["m00"], m["m01"] / m["m00"]
-    x, y, w, h = cv2.boundingRect(contour)
-    return x + w / 2.0, y + h / 2.0
 
 
 def _dedupe_close_points(points: list[list[float]], min_spacing: float) -> list[list[float]]:
@@ -98,7 +87,12 @@ def _to_real_world(
     derece kaydirip koseleri pahladigi icin dortgenler yamuk gorunur.
     Parsel sinirlarina UYGULANMAZ: onlar dogal olarak egik ve dik acili
     olmayan cokgenlerdir.
+
+    Konturlar alt-piksel (float32) geldigi icin `approxPolyDP` de float32
+    uzerinde calisir -- int32'ye cevirmek ondalik kismi kirpip geometriyi
+    yeniden bir piksel oynatirdi.
     """
+    contour = contour.astype(np.float32)
     epsilon_px = SIMPLIFY_TOLERANCE_M / meters_per_px
     simplified = cv2.approxPolyDP(contour, epsilon_px, True).reshape(-1, 2)
     points_px = (
@@ -122,11 +116,7 @@ def _parcel_lines_to_real_world(
     (ft) cevirir ve ardisik nokta ciftlerini DetailLine segmentleri olarak
     dondurur. Her fiziksel cizgi `extract_parcel_lines()` sayesinde zaten
     tam bir kez geldigi icin ekstra bir cift-cizgi birlestirmesine gerek
-    yoktur (bkz. geometry.py modul docstring'i).
-
-    Koordinatlar temizleme katmanindan alt-piksel (ondalikli) geldigi icin
-    `approxPolyDP` int32 degil float32 uzerinde calistirilir -- int32'ye
-    cevirmek ondalik kismi kirpip cizgileri yeniden bir piksel oynatirdi."""
+    yoktur (bkz. geometry.py modul docstring'i)."""
     segments: list[list[list[float]]] = []
     epsilon_px = SIMPLIFY_TOLERANCE_M / meters_per_px
     for polyline in polylines_px:
@@ -162,7 +152,7 @@ def _image_frame_lines(width: int, height: int, feet_per_px: float) -> list[list
 
 
 def _labels_to_real_world(
-    raw_labels: list[dict], meters_per_px: float, feet_per_px: float, image_height: int
+    raw_labels: list[dict], label_parcel: list[int | None], feet_per_px: float, image_height: int
 ) -> list[dict]:
     records = []
     for i, label in enumerate(raw_labels):
@@ -174,6 +164,7 @@ def _labels_to_real_world(
                 "id": i,
                 "text": label["text"],
                 "confidence": label["confidence"],
+                "parcel_id": label_parcel[i] if i < len(label_parcel) else None,
                 "position_ft": [
                     round(cx * feet_per_px, 3),
                     round((image_height - cy) * feet_per_px, 3),
@@ -194,88 +185,51 @@ def _progress(percent: int, message: str) -> None:
 
 
 def prepare(
-    parsel_path: Path,
     bina_path: Path,
+    parsel_path: Path,
+    both_path: Path,
     scale_denominator: float,
     output_dir: Path,
     extract_labels: bool = True,
 ) -> None:
-    _progress(5, "Ölçek çubuğu hesaplanıyor")
+    _progress(4, "Ölçek çubuğu hesaplanıyor")
     scale_info = compute_scale_info(parsel_path, scale_denominator)
     meters_per_px = scale_info["meters_per_pixel"]
     feet_per_px = scale_info["feet_per_pixel"]
 
-    _progress(15, "Parsel konturları cıkarılıyor")
-    parcel_image, parcels = extract_parcels(parsel_path)
-    _progress(30, "Bina konturları cıkarılıyor")
-    building_image, buildings = extract_buildings(bina_path)
-    if parcel_image.shape[:2] != building_image.shape[:2]:
-        raise ValueError(
-            f"Goruntu boyutlari eslesmiyor: parsel={parcel_image.shape[:2]} bina={building_image.shape[:2]}"
-        )
-    height, width = parcel_image.shape[:2]
-    _progress(45, "Parsel-bina ilişkisi hesaplaniyor")
-    parcels_by_area = sorted(parcels, key=cv2.contourArea)
+    # Hizalama once yapilir: uc goruntunun boyut uyumu burada dogrulanir,
+    # yani uyumsuz bir girdi uzun geometri asamalarindan ONCE anlasilir.
+    _progress(10, "Katmanlar both.png ile hizalanıyor")
+    alignment = layer_offset(bina_path, parsel_path, both_path)
+    if alignment["warning"]:
+        print("UYARI: {}".format(alignment["warning"]))
 
-    parcel_to_buildings: dict[int, list[int]] = {i: [] for i in range(len(parcels_by_area))}
-    building_parcel_id: list[int | None] = []
-    for b_contour in buildings:
-        cx, cy = _centroid(b_contour)
-        matched = None
-        for p_idx, p_contour in enumerate(parcels_by_area):
-            if cv2.pointPolygonTest(p_contour, (cx, cy), False) >= 0:
-                matched = p_idx
-                break
-        building_parcel_id.append(matched)
-        if matched is not None:
-            parcel_to_buildings[matched].append(len(building_parcel_id) - 1)
+    height, width = layer_masks(parsel_path).shape
 
-    parcel_records = []
-    for p_idx, p_contour in enumerate(parcels_by_area):
-        vertices_ft, area_m2 = _to_real_world(p_contour, meters_per_px, feet_per_px, height)
-        parcel_records.append(
-            {
-                "id": p_idx,
-                "area_m2": area_m2,
-                "vertices_ft": vertices_ft,
-                "building_ids": parcel_to_buildings[p_idx],
-            }
-        )
+    _progress(20, "Bina birimleri cıkarılıyor")
+    buildings = shift_contours(extract_buildings(bina_path), tuple(alignment["offset_px"]))
 
-    building_records = []
-    for b_idx, b_contour in enumerate(buildings):
-        vertices_ft, area_m2 = _to_real_world(
-            b_contour, meters_per_px, feet_per_px, height, square_up=True
-        )
-        building_records.append(
-            {
-                "id": b_idx,
-                "area_m2": area_m2,
-                "vertices_ft": vertices_ft,
-                "parcel_id": building_parcel_id[b_idx],
-            }
-        )
+    _progress(38, "Parsel hücreleri cıkarılıyor")
+    parcel_cells = order_by_area(extract_parcel_cells(parsel_path))
 
-    _progress(55, "Parsel çizgileri izleniyor")
-    _, raw_parcel_lines = extract_parcel_lines(parsel_path)
-    parcel_lines = _parcel_lines_to_real_world(raw_parcel_lines, meters_per_px, feet_per_px, height)
-    frame_lines = _image_frame_lines(width, height, feet_per_px)
+    _progress(50, "Parsel çizgileri izleniyor")
+    raw_parcel_lines = extract_parcel_lines(parsel_path)
 
-    _progress(62, "Kuzey oku aranıyor")
+    _progress(58, "Parsel-bina ilişkisi hesaplanıyor")
+    building_parcel_id, parcel_buildings = match_buildings(buildings, parcel_cells)
+
+    _progress(64, "Kuzey oku aranıyor")
     north = detect_north_arrow(parsel_path)
     north_record = None
     if north is not None:
         cx, cy = north["center_px"]
         north_record = {
-            "position_ft": [
-                round(cx * feet_per_px, 3),
-                round((height - cy) * feet_per_px, 3),
-            ],
+            "position_ft": [round(cx * feet_per_px, 3), round((height - cy) * feet_per_px, 3)],
             "rotation_deg": north["rotation_deg"],
         }
 
-    label_records: list[dict] = []
     raw_labels: list[dict] = []
+    label_parcel: list[int | None] = []
     label_warning = None
     if extract_labels:
         # En uzun suren adim: EasyOCR ilk calistirmada modelini de indirir.
@@ -283,21 +237,58 @@ def prepare(
         try:
             from ocr_labels import extract_parcel_labels
 
-            _, raw_labels = extract_parcel_labels(parsel_path)
-            label_records = _labels_to_real_world(raw_labels, meters_per_px, feet_per_px, height)
+            raw_labels = extract_parcel_labels(parsel_path)
+            label_parcel = match_labels([l["center_px"] for l in raw_labels], parcel_cells)
         except Exception as ex:  # OCR (agir/internet gerektiren bagimlilik) basarisiz olsa bile
             label_warning = f"Etiket OCR'i basarisiz oldu, etiketsiz devam edildi: {ex}"
             print(f"UYARI: {label_warning}")
 
-    _progress(92, "Sonuçlar yaziliyor")
+    _progress(88, "Gercek birime cevriliyor")
+    parcel_labels = invert_label_match(label_parcel, raw_labels, len(parcel_cells))
+    parcel_records = []
+    for parcel_id, cell in enumerate(parcel_cells):
+        vertices_ft, area_m2 = _to_real_world(cell, meters_per_px, feet_per_px, height)
+        parcel_records.append(
+            {
+                "id": parcel_id,
+                "label": parcel_labels[parcel_id],
+                "area_m2": area_m2,
+                "vertices_ft": vertices_ft,
+                "building_ids": parcel_buildings[parcel_id],
+            }
+        )
+
+    building_records = []
+    for building_id, contour in enumerate(buildings):
+        vertices_ft, area_m2 = _to_real_world(
+            contour, meters_per_px, feet_per_px, height, square_up=True
+        )
+        parcel_id = building_parcel_id[building_id]
+        building_records.append(
+            {
+                "id": building_id,
+                "area_m2": area_m2,
+                "vertices_ft": vertices_ft,
+                "parcel_id": parcel_id,
+                "parcel_label": parcel_labels[parcel_id] if parcel_id is not None else None,
+            }
+        )
+
+    parcel_lines = _parcel_lines_to_real_world(raw_parcel_lines, meters_per_px, feet_per_px, height)
+    frame_lines = _image_frame_lines(width, height, feet_per_px)
+    label_records = _labels_to_real_world(raw_labels, label_parcel, feet_per_px, height)
+
+    _progress(94, "Sonuçlar yaziliyor")
     output_dir.mkdir(parents=True, exist_ok=True)
+    matched_count = sum(1 for b in building_records if b["parcel_id"] is not None)
     result = {
         "scale": scale_info,
         "image_size_px": {"width": width, "height": height},
-        "origin_note": "vertices_ft/position_ft: X sagda artar, Y yukarida artar (piksel Y-ekseni ters cevrilmistir); orijin goruntunun sol-alt kosesidir.",
+        "origin_note": "vertices_ft/position_ft: X sagda artar, Y yukarida artar (piksel Y-ekseni ters cevrilmistir); orijin parsel.png'nin sol-alt kosesidir.",
+        "alignment": alignment,
         "parcel_count": len(parcel_records),
         "building_count": len(building_records),
-        "matched_building_count": sum(1 for b in building_records if b["parcel_id"] is not None),
+        "matched_building_count": matched_count,
         "parcel_line_count": len(parcel_lines),
         "parcel_lines_note": "DetailLine cizimi icin kullanilacak segment listesi; iskelet grafigi dogrudan izlenerek uretildigi icin her fiziksel cizgi (komsu parsellerin ortak siniri dahil) tam bir kez yer alir.",
         "parcel_lines": parcel_lines,
@@ -305,8 +296,10 @@ def prepare(
         "frame_lines": frame_lines,
         "north_note": "Goruntudeki kuzey okunun konumu ve yonu; Revit'te secilen aciklama sembolu (annotation symbol) bu noktaya, yukari bakan bir sembolu ayni yone cevirecek 'rotation_deg' aci ile yerlestirilir. Ok bulunamazsa null.",
         "north": north_record,
+        "buildings_note": "Her kayit bir bina BIRIMIDIR ve ayri bir FilledRegion olur; bitisik yapilarda ic bolme (parti) duvarlari korunur.",
+        "parcels_note": "Parsel hucreleri cizilmez; alan/eslesme bilgisi tasirlar. 'label' o hucrenin icine dusen OCR okumasidir (sokak/bos alan hucrelerinde null).",
         "label_count": len(label_records),
-        "labels_note": "Parsel numara etiketleri (OCR ile okundu, ör. '591G'). 'confidence' (0-1) dusukse (<~0.5) okuma yanlis olabilir -- G/6, A/4, B/8, S/5 gibi benzer karakterler karisabiliyor. OCR basarisiz/atlandiysa bu liste bostur.",
+        "labels_note": "Parsel numara etiketleri (OCR ile okundu, ör. '568C'). 'confidence' (0-1) dusukse (<~0.5) okuma yanlis olabilir -- G/6, A/4, B/8, S/5 gibi benzer karakterler karisabiliyor. OCR basarisiz/atlandiysa bu liste bostur.",
         "labels": label_records,
         "label_warning": label_warning,
         "parcels": parcel_records,
@@ -315,51 +308,30 @@ def prepare(
     with open(output_dir / "revit_input.json", "w", encoding="utf-8") as f:
         json.dump(result, f, ensure_ascii=False, indent=2)
 
-    # --- Gorsel dogrulama (fiilen Revit'e gidecek parcel_lines ile ayni kaynak) ---
-    canvas = np.full((height, width, 3), 255, dtype=np.uint8)
-    cv2.rectangle(canvas, (0, 0), (width - 1, height - 1), FRAME_COLOR, LINE_THICKNESS)
-    for polyline in raw_parcel_lines:
-        # Polyline'lar alt-piksel; cv2.polylines tam sayi ister (kirpma degil
-        # yuvarlama: yarim piksellik kayma onizlemede gorunur olabiliyor).
-        pts = np.round(np.array(polyline, dtype=np.float64)).astype(np.int32).reshape(-1, 1, 2)
-        cv2.polylines(canvas, [pts], False, PARCEL_COLOR, LINE_THICKNESS)
-    overlay = canvas.copy()
-    for b_idx, b_contour in enumerate(buildings):
-        fill = MATCHED_FILL if building_parcel_id[b_idx] is not None else UNMATCHED_FILL
-        cv2.drawContours(overlay, [b_contour], -1, fill, cv2.FILLED)
-    canvas = cv2.addWeighted(overlay, FILL_ALPHA, canvas, 1 - FILL_ALPHA, 0)
-    cv2.drawContours(canvas, buildings, -1, BUILDING_COLOR, LINE_THICKNESS)
-    for i, label in enumerate(label_records):
-        cx, cy = raw_labels[i]["center_px"]
-        color = LABEL_HIGH_CONF_COLOR if label["confidence"] >= 0.5 else LABEL_LOW_CONF_COLOR
-        cv2.putText(
-            canvas, label["text"], (int(cx) - 15, int(cy)),
-            cv2.FONT_HERSHEY_SIMPLEX, 0.35, color, 1, cv2.LINE_AA,
-        )
-    if north is not None:
-        # Tespit edilen yon: dunya vektoru (-sin0, cos0) -> piksel uzayinda Y ters.
-        angle = math.radians(north["rotation_deg"])
-        cx, cy = north["center_px"]
-        tip = (int(cx - math.sin(angle) * NORTH_MARKER_PX), int(cy - math.cos(angle) * NORTH_MARKER_PX))
-        cv2.arrowedLine(canvas, (int(cx), int(cy)), tip, NORTH_COLOR, LINE_THICKNESS, tipLength=0.35)
+    canvas = render_preview(
+        width, height, raw_parcel_lines, buildings, building_parcel_id,
+        raw_labels, north, alignment["warning"],
+    )
     cv2.imwrite(str(output_dir / "revit_input_preview.png"), canvas)
     _progress(100, "Tamamlandi")
 
-    matched = result["matched_building_count"]
     print(
         f"Olcek: {scale_info['scale_label']} ({meters_per_px:.5f} m/px) | "
+        f"Hizalama: {alignment['offset_px']} px | "
         f"Parsel: {len(parcel_records)} | Bina: {len(building_records)} | "
-        f"eslesen: {matched} | eslesmeyen: {len(building_records) - matched} | "
+        f"eslesen: {matched_count} | eslesmeyen: {len(building_records) - matched_count} | "
         f"etiket: {len(label_records)} "
         f"-> {output_dir}/revit_input.json"
     )
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="pyRevit icin gercek-birim ara format uretimi (Faz 3)")
-    parser.add_argument("--scale", type=float, required=True, help="Harita olcegi paydasi, ör. 1000 (1:1000 icin)")
-    parser.add_argument("--parsel", type=Path, default=Path("assets/parsel.png"))
-    parser.add_argument("--bina", type=Path, default=Path("assets/bina.png"))
+    parser = argparse.ArgumentParser(description="pyRevit icin gercek-birim ara format uretimi")
+    parser.add_argument("--scale", type=float, required=True, help="Harita olcegi paydasi, ör. 500 (1:500 icin)")
+    parser.add_argument("--bina", type=Path, default=Path("assets/bina.png"), help="Yalniz bina katmani")
+    parser.add_argument("--parsel", type=Path, default=Path("assets/parsel.png"), help="Yalniz parsel katmani")
+    parser.add_argument("--both", type=Path, default=Path("assets/both.png"),
+                        help="Iki katman ust uste; yalniz hizalama referansi olarak kullanilir")
     parser.add_argument("--output-dir", type=Path, default=Path("output"))
     parser.add_argument(
         "--labels", action=argparse.BooleanOptionalAction, default=True,
@@ -367,7 +339,7 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    prepare(args.parsel, args.bina, args.scale, args.output_dir, extract_labels=args.labels)
+    prepare(args.bina, args.parsel, args.both, args.scale, args.output_dir, extract_labels=args.labels)
 
 
 if __name__ == "__main__":

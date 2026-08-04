@@ -1,6 +1,8 @@
 title: Parsel/Bina Aktar
 tooltip: >
-  parsel.png ve bina.png secip, harita olcegini girip, line style ve
-  filled region tipini projeden secerek parsel sinirlarini (DetailLine)
-  ve bina alanlarini (FilledRegion) aktif view'e olusturur. Goruntu
-  isleme arka planda proje venv'i (env/) uzerinden otomatik yapilir.
+  UC png secip (yalniz bina, yalniz parsel ve ikisi birlikte), harita
+  olcegini girip, line style ile filled region tipini projeden secerek
+  parsel sinirlarini (DetailLine) ve bina birimlerini (FilledRegion) aktif
+  view'e olusturur. Ucuncu gorsel geometri kaynagi degildir; iki katmani
+  birbirine hizalayip parsel-bina eslesmesinin dogrulugunu saglar.
+  Goruntu isleme arka planda proje venv'i (env/) uzerinden otomatik yapilir.

@@ -19,11 +19,28 @@ Bilincli sinirlar:
   - Yeni kose eskisinden `max_shift` pikselden fazla uzaga duserse eski
     kose korunur. Cok kisa kenarlarda iki dogru neredeyse paralel
     kesisip koseyi metrelerce oteye atabilir; bu koruma onu engeller.
+  - Butun poligon yine de kendi uzerine katlanabiliyorsa (asagi bkz.)
+    oturtma TAMAMEN iptal edilir ve girdi oldugu gibi geri doner.
+
+## Neden sonda bir gecerlilik kontrolu var
+
+Kose bazindaki `max_shift` korumasi YEREL'dir: her koseyi tek basina
+makul bir mesafede tutar ama koselerin BIRBIRINE gore sirasini garanti
+etmez. Kisa bir kenarin iki ucu birbirinin otesine gectiginde poligon
+kendi kendini keser. Boyle bir halkayi Revit `FilledRegion`a cevirirken
+reddeder -- ve bu, ciktida "eksik dolgu" olarak gorunur, hata olarak
+degil. Olculdu: bu koruma olmadan 84 bina biriminin 4'u gecersiz
+cikiyordu (kucuk, 5-6 koseli birimler dahil).
+
+Izgaraya oturtma bir GORUNUM iyilestirmesidir; poligonu bozacaksa
+vazgecmek her zaman dogru takastir.
 """
 
 from __future__ import annotations
 
 import math
+
+from shapely.geometry import Polygon
 
 ANGLE_TOLERANCE_DEG = 20.0   # bu kadar sapmis kenar izgaraya cekilir, fazlasi egik kabul edilir
 PARALLEL_EPSILON = 0.05      # iki dogru bu kadar paralelse kesisim aranmaz (sin(aci))
@@ -112,7 +129,21 @@ def snap_to_dominant_axes(
             corners.append(fallback)
         else:
             corners.append(point)
+
+    # Kose bazindaki koruma yerel; poligonun butunu yine de kendi uzerine
+    # katlanmis olabilir (bkz. modul docstring'i). Oyleyse oturtmadan
+    # tamamen vazgec -- sadelestirilmis ama gecerli poligon, izgaraya
+    # oturmus ama Revit'in reddettigi poligondan iyidir.
+    if not _is_simple(corners):
+        return polygon
     return corners
+
+
+def _is_simple(points: list[tuple[float, float]]) -> bool:
+    """Poligon kendi kendini kesmiyor mu (OGC anlaminda gecerli mi)?"""
+    if len(points) < 3:
+        return False
+    return Polygon(points).is_valid
 
 
 def _half_span(edges, index: int) -> float:
