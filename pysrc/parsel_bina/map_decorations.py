@@ -15,15 +15,30 @@ Ikisi de ISE YARAR bilgidir, bu yuzden ayiklanmakla kalmaz olculur de:
     (bkz. scale.py).
 
 Ikisi de ayni lacivert bilesen kumesinden gelir ve birbirinden SEKILLE
-ayrilir: olcek cubugu dolu (fill ~1), uzun ve ince bir dikdortgendir; ok
-degildir. Bu yuzden ikisinin tespiti tek modulde durur -- ayri modullerde
+ayrilir: olcek cubugu uzun, ince ve UCTAN UCA kesintisizdir; ok degildir.
+Bu yuzden ikisinin tespiti tek modulde durur -- ayri modullerde
 olduklarinda ayni renk esikleri iki kez, birbirinden bagimsiz sekilde
 tanimlanmis oluyordu.
+
+## Cubuk olcutu neden "dolu dikdortgen" degil
+
+Cizim motorunun surumune gore olcek cubugu iki bicimde gelir: yeni
+ciktilarda ici dolu bir dikdortgen (doluluk ~1.0), eski ciktilarda ise
+iki ucunda dikey tirnak olan ince bir cizgi -- yani bir "I" kirisi
+(doluluk ~0.25). Doluluk orani bu ikisini ayni esikte tutamaz; dahasi
+metin parcalarinin dolulugu (~0.3-0.5) I kirisininkinden YUKSEK oldugu
+icin bu olcut ayirt edici bile degildir.
+
+Iki bicimin de ortak ozelligi, kunye harflerinin hicbirinde bulunmayan
+sudur: cubugun govdesi bastan sona TEK bir kesintisiz yatay diziden
+gecer. Olcut bu yuzden en uzun yatay dizinin genislige oranidir
+(bkz. BAR_MIN_SPAN_RATIO).
 """
 
 from __future__ import annotations
 
 import math
+from dataclasses import dataclass
 from pathlib import Path
 
 import cv2
@@ -31,46 +46,73 @@ import numpy as np
 
 from imaging import decoration_mask
 
-# Olcek cubugu olcutu: dolu, uzun/ince, yeterince genis bir dikdortgen.
-BAR_MIN_FILL_RATIO = 0.8
+# Olcek cubugu olcutu: uzun, ince ve uctan uca kesintisiz.
 BAR_MIN_ASPECT = 3.0
 BAR_MIN_WIDTH = 25
-BAR_MIN_AREA = 150
+# En uzun kesintisiz yatay dizi, bilesen genisliginin en az bu kadari
+# olmali. Olculen degerler: dolu cubuk 1.00, I kirisi 0.99; en yakin
+# yanlis aday (kuzey oku) 0.90, kunye harfleri <= 0.6.
+BAR_MIN_SPAN_RATIO = 0.95
 
 # Kuzey oku adayi icin en kucuk bilesen alani (px). Altindakiler "10 m"/"N"
 # gibi metin parcalari ya da gurultudur.
 MIN_ARROW_AREA = 150
 
 
-def _components(image_path: Path):
-    mask = decoration_mask(image_path)
-    return cv2.connectedComponentsWithStats(mask, connectivity=8)
+def _longest_row_run(pixels: np.ndarray) -> int:
+    """Bilesenin en uzun kesintisiz yatay piksel dizisinin uzunlugu."""
+    best = 0
+    for row in pixels:
+        gaps = np.flatnonzero(~row)
+        edges = np.concatenate(([-1], gaps, [row.size]))
+        best = max(best, int(np.diff(edges).max()) - 1)
+    return best
 
 
-def _is_scale_bar(width: int, height: int, area: int) -> bool:
-    if area < BAR_MIN_AREA or width < BAR_MIN_WIDTH or height == 0:
-        return False
-    return (area / float(width * height)) >= BAR_MIN_FILL_RATIO and (width / float(height)) >= BAR_MIN_ASPECT
+@dataclass(frozen=True)
+class _Component:
+    """Sagolcum maskesinin tek bir baglantili bileseni."""
+
+    x: int
+    y: int
+    width: int
+    height: int
+    area: int
+    pixels: np.ndarray  # bbox boyutunda bool maske
+
+    @property
+    def is_scale_bar(self) -> bool:
+        if self.width < BAR_MIN_WIDTH or self.height == 0:
+            return False
+        if (self.width / float(self.height)) < BAR_MIN_ASPECT:
+            return False
+        return _longest_row_run(self.pixels) >= BAR_MIN_SPAN_RATIO * self.width
+
+
+def _components(image_path: Path) -> list[_Component]:
+    num_labels, labels, stats, _ = cv2.connectedComponentsWithStats(
+        decoration_mask(image_path), connectivity=8
+    )
+    components = []
+    for label_id in range(1, num_labels):
+        x, y, w, h, area = (int(v) for v in stats[label_id])
+        components.append(_Component(x, y, w, h, area, labels[y:y + h, x:x + w] == label_id))
+    return components
 
 
 def detect_scale_bar_px(image_path: Path) -> int:
-    """Dolu lacivert olcek cubugunun piksel genisligini bulur.
+    """Lacivert olcek cubugunun piksel genisligini bulur.
 
     Metin parcalari ve kuzey oku sekil olcutuyle elenir; birden fazla aday
     kalirsa en genisi alinir (cubuk, kunye harflerinden her zaman uzundur).
     """
-    num_labels, _, stats, _ = _components(image_path)
-    widths = [
-        stats[i, cv2.CC_STAT_WIDTH]
-        for i in range(1, num_labels)
-        if _is_scale_bar(stats[i, cv2.CC_STAT_WIDTH], stats[i, cv2.CC_STAT_HEIGHT], stats[i, cv2.CC_STAT_AREA])
-    ]
+    widths = [c.width for c in _components(image_path) if c.is_scale_bar]
     if not widths:
         raise RuntimeError(
-            "Olcek cubugu tespit edilemedi: goruntude lacivert, dolu ve uzun bir "
-            "cubuk bulunamadi. Kaynak gorsel olcek cubugunu iceriyor mu?"
+            "Olcek cubugu tespit edilemedi: goruntude lacivert, uzun ve uctan uca "
+            "kesintisiz bir cubuk bulunamadi. Kaynak gorsel olcek cubugunu iceriyor mu?"
         )
-    return int(max(widths))
+    return max(widths)
 
 
 def detect_north_arrow(image_path: Path) -> dict | None:
@@ -86,19 +128,13 @@ def detect_north_arrow(image_path: Path) -> dict | None:
     gereken aci (CCW pozitif, Revit'in Z ekseni etrafinda donusuyle ayni).
     Ok bulunamazsa None doner.
     """
-    num_labels, labels, stats, _ = _components(image_path)
-
-    best, best_area = None, 0
-    for label_id in range(1, num_labels):
-        _, _, w, h, area = stats[label_id]
-        if area < MIN_ARROW_AREA or _is_scale_bar(w, h, area):
-            continue
-        if area > best_area:
-            best, best_area = label_id, area
-    if best is None:
+    candidates = [c for c in _components(image_path) if c.area >= MIN_ARROW_AREA and not c.is_scale_bar]
+    if not candidates:
         return None
+    best = max(candidates, key=lambda c: c.area)
 
-    ys, xs = np.where(labels == best)
+    ys, xs = np.nonzero(best.pixels)
+    xs, ys = xs + best.x, ys + best.y
     cx, cy = float(xs.mean()), float(ys.mean())
     centered = np.stack([xs - cx, ys - cy]).astype(np.float64)
     eigenvalues, eigenvectors = np.linalg.eigh(np.cov(centered))
@@ -113,7 +149,7 @@ def detect_north_arrow(image_path: Path) -> dict | None:
     return {
         "center_px": (cx, cy),
         "rotation_deg": round(rotation_deg, 2),
-        "pixel_area": int(best_area),
+        "pixel_area": best.area,
     }
 
 

@@ -55,7 +55,17 @@ RED_DOMINANCE_MIN = 40
 BUILDING_RED_MIN = 170
 
 # B kanali G/R'nin en az bu kadar uzerindeyse "lacivert sagolcum".
-BLUE_DOMINANCE_MIN = 20
+#
+# Esik neden bu kadar dusuk: kaynak gorsellerin bir kismi (bkz.
+# assets/oldversion) SEFFAF degil, acik gri bir zemine DUZLESTIRILMIS
+# gelir -- yani anti-alias alfaya degil dogrudan RGB'ye yazilmistir.
+# Notr bir zeminle harmanlanan bir piksel tonunu korur ama kanal farki
+# alfayla dogru orantili kucululur: saf lacivertte (131, 85, 39) fark 46
+# iken %30 kapaklikta ~14'e duser. 20'lik bir esik boyle bir goruntude
+# olcek cubugunun govdesini kirpip yalnizca cekirdegini birakiyordu.
+# 12 -> saf farkin ~1/4'u; yarisindan cok kapali her piksel iceride
+# kalir, notr zemin (fark 0) ve kirmizi cizgiler (fark negatif) disarida.
+BLUE_DOMINANCE_MIN = 12
 
 # Notr (metin) piksel olcutu: kanallar birbirine bu kadar yakin ve piksel
 # beyaz degil.
