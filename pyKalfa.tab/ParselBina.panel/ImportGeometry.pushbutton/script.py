@@ -274,10 +274,10 @@ logger.info("revit_input.json yuklendi: {} parsel, {} bina, {} etiket".format(
 if data.get("label_warning"):
     logger.info("Etiket uyarisi: {}".format(data["label_warning"]))
 
-# Hizalama dogrulanamadiysa parsel-bina eslesmesi sessizce yanlis olabilir
-# -- ciktida hata gibi gorunmeyen tek sorun budur, bu yuzden kullaniciya
-# sorulur. Geometri yine de dogru cizilir; supheli olan yalnizca hangi
-# binanin hangi parsele ait sayildigidir.
+# Hizalama dogrulanamadiysa kayma SIFIR varsayilmistir: binalar parsellere
+# gore olculemeyen kadar kaymis cizilebilir ve parsel-bina eslesmesi de
+# sessizce yanlis olabilir. Ciktida hata gibi gorunmedigi icin kullaniciya
+# sorulur.
 alignment = data.get("alignment") or {}
 if alignment.get("warning"):
     logger.info("Hizalama uyarisi: {}".format(alignment["warning"]))

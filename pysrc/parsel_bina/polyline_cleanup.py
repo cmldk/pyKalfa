@@ -29,9 +29,10 @@ Bilincli sinirlar:
     noktalarini oynatir; ilk/son nokta grafin baska polyline'lariyla
     paylasilan dugumdur ve sabit kalir. Aksi halde bir cizgiyi dikeye
     oturtmak komsu cizgiyle olan baglantiyi koparirdi.
-  - Bu yuzden aci normalizasyonu varsayilan olarak KAPALIDIR ve sadece
-    bina katmaninda acilir (parsel sinirlari dogal olarak egik ve dik
-    acili olmayan cokgenlerdir -- bkz. regularize.py).
+  - Bu yuzden aci normalizasyonu varsayilan olarak KAPALIDIR ve hicbir
+    katmanda acilmaz: parsel sinirlari dogal olarak egiktir, binalarin dik
+    acilari ise goruntu eksenlerine degil kendi bloklarina goredir (bkz.
+    geometry.py, regularize.py).
   - Buradaki sadelestirme piksel uzayinda ve kucuk toleransli, "gurultu
     temizligi" duzeyindedir; gercek-dunya toleransiyla (30 cm) yapilan
     esas sadelestirme prepare_revit_input.py'de kalir.

@@ -38,13 +38,16 @@ hucrenin hic bulunamamasina yol acabiliyordu.
 
 Ayarlar `BUILDING_CLEANUP`/`PARCEL_CLEANUP` sabitlerindedir ve `cleanup`
 argumaniyla degistirilebilir; neyin neden yapildigi icin bkz.
-polyline_cleanup.py. Tek fark aci normalizasyonudur:
+polyline_cleanup.py. Iki katmanda da goruntu eksenlerine (0/45/90) aci
+normalizasyonu KAPALIDIR (`axis_tolerance_deg=0`):
 
-  - Bina duvarlari gercekte duz ve cogunlukla dik acilidir; 0/45/90'a
-    yakin bir kenar raster gurultusu yuzunden birkac derece kaymissa
-    duzeltilir.
   - Parsel sinirlari dogal olarak egiktir; oraya aci dayatmak sinirlari
-    bozar, bu yuzden `axis_tolerance_deg=0` (kapali) birakilir.
+    bozar.
+  - Bina duvarlari dik acilidir ama goruntu eksenlerine gore degil, KENDI
+    bloklarinin izgarasina gore; o duzeltmeyi `square_network` yapar.
+    Goruntu eksenlerine oturtma kuzeye gore birkac derece donuk bir
+    blokta duvarlari yanlis aciya ceviriyor ve hatayi polyline boyunca
+    biriktirerek noktalari 50 cm'ye kadar kaydiriyordu (olculdu).
 
 ## Neden geometriyi degistiren HER adim `polygonize`dan ONCE
 
@@ -82,8 +85,9 @@ from skimage.morphology import skeletonize
 from imaging import layer_masks
 from polyline_cleanup import CleanupConfig, Polyline, clean_polylines
 from regularize import (
-    dominant_angle,
+    CORNER_SHIFT_FACTOR,
     edge_line,
+    grid_angles,
     rebuild_open,
     snap_edges,
     snap_polyline_to_axes,
@@ -112,7 +116,7 @@ MAX_FRAME_GAP_RATIO = 0.4     # `close_shapes_at_frame`: kapatilabilecek en geni
                                # yakinlastirma duzeyine gore 200 pikseli asabiliyor
                                # (olculdu). Oran, esigi kadrajla birlikte olcekler.
 
-BUILDING_CLEANUP = CleanupConfig(axis_tolerance_deg=4.0)
+BUILDING_CLEANUP = CleanupConfig()
 PARCEL_CLEANUP = CleanupConfig()
 
 
@@ -450,9 +454,10 @@ def square_network(polylines: list[Polyline], config: SquaringConfig) -> list[Po
     hale gelir. Dugumler (polyline uclari) sabit tutulur, sadece ic
     noktalar oynar -- yani ag hic kopmaz.
 
-    Izgara acisi BLOK BAZINDA hesaplanir: bitisik bir yapi blogunun butun
-    duvarlari ayni dogrultuya oturur, ayri bloklar ise (kadastroda sik
-    oldugu gibi) kendi acilarini korur.
+    Izgara BLOK BAZINDA hesaplanir ama tek bir aci olarak degil: bitisik
+    bir blokta farkli dogrultularda yapilmis binalar olabilir, her kenar
+    blogun en yakin izgara ailesine oturur (bkz. `regularize.grid_angles`).
+    Ayri bloklar kendi acilarini korur.
 
     Dugumler de oynatilir ama HER DUGUM ICIN BIR KEZ: konumu, o dugumde
     bulusan butun segmentlerin ortak cozumu olarak hesaplanir ve paylasan
@@ -465,7 +470,7 @@ def square_network(polylines: list[Polyline], config: SquaringConfig) -> list[Po
     for group in _components(polylines):
         members = [polylines[i] for i in group]
         locks = [_frame_edge_flags(p, config.frame_shape) for p in members]
-        dominant = dominant_angle(members, locks)
+        dominant = grid_angles(members, locks)
         if dominant is None:
             result.extend(members)
             continue
@@ -491,25 +496,35 @@ def square_network(polylines: list[Polyline], config: SquaringConfig) -> list[Po
 
         snapped = [
             snap_edges(p, dominant, config.angle_tolerance_deg, config.chamfer_max_length,
-                       locked=lock)
+                       locked=lock, max_shift=config.max_shift)
             for p, lock in zip(chains, chain_locks)
         ]
 
         # Her dugumde bulusan uc segmentlerin dogrularini topla, dugumu
         # bir kez coz, sonra polyline'lari o dugumlerle yeniden kur.
+        #
+        # Dugumun ne kadar oynayabilecegi dugume ozeldir: ucundaki segment pah
+        # olarak atildiysa dugum o pahin boyu kadar iceriye, gercek duvarin
+        # kosesine gidebilmelidir; atilmadiysa yalniz oturtma payi kadar.
+        # Butun dugumlere en genis payi tanimak (eskiden 1.5 m) pahsiz
+        # dugumleri de gereksiz yere kaydirabiliyordu.
         incident: dict[tuple[float, float], list] = {}
+        reach: dict[tuple[float, float], float] = {}
         for polyline, (edges, angles) in zip(chains, snapped):
             if not edges:
                 continue
-            for point, edge, angle in (
-                (polyline[0], edges[0], angles[0]),
-                (polyline[-1], edges[-1], angles[-1]),
+            for point, edge, angle, inner in (
+                (polyline[0], edges[0], angles[0], edges[0].start),
+                (polyline[-1], edges[-1], angles[-1], edges[-1].end),
             ):
-                incident.setdefault(_node_key(point), []).append(edge_line(edge, angle))
+                key = _node_key(point)
+                incident.setdefault(key, []).append(edge_line(edge, angle))
+                gap = math.hypot(inner[0] - point[0], inner[1] - point[1])
+                reach[key] = max(reach.get(key, 0.0), gap)
 
-        node_limit = config.max_shift + config.chamfer_max_length
         moved = {
-            key: solve_node(lines, key, node_limit) for key, lines in incident.items()
+            key: solve_node(lines, key, CORNER_SHIFT_FACTOR * config.max_shift + reach[key])
+            for key, lines in incident.items()
         }
 
         for polyline, (edges, angles) in zip(chains, snapped):
