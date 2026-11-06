@@ -12,6 +12,7 @@ geometrisi, kat planı DXF'inden de gerçek duvarlar üretir.
 | **Parsel/Bina Aktar** | Kadastro görüntülerinden (PNG) parsel sınırlarını `DetailLine`, bina alanlarını `FilledRegion`, parsel numaralarını `TextNote` olarak Revit'e çizer. |
 | **Parsel/Bina GIS** | Valonya'da adres veya CaPaKey ile SPW geoportalından parsel sınırlarını, binaları ve parsel numaralarını alıp Parsel/Bina Aktar ile aynı stillerle çizer. OCR ve görsel gerekmez. |
 | **Duvar Aktar** | Kat planı DXF'indeki duvarları gerçek Revit `Wall` elemanlarına dönüştürür. |
+| **Rölöve Aktar** | Polycam taramasından boş projeye hızlı rölöve: ölçülen kat kotları, taranan yüzlere oturtulmuş duvarlar, kapı/pencere ve adlı odalar. |
 
 ## Gereksinimler
 
@@ -149,6 +150,43 @@ parsel numaraları parselin kadastro özniteliklerinden gelir.
 
 > Aktarımın tamamı tek bir işlemdir: sonucu beğenmezseniz Revit'te tek
 > bir **Ctrl+Z** ile geri alabilirsiniz.
+
+### Rölöve Aktar
+
+Polycam (iPhone/iPad LiDAR) taramasından mimar için hızlı bir başlangıç
+modeli üretir. Amaç güvenilir bir rölöve: ölçü taramadan gelir, belirsiz
+olan uydurulmaz, işaretlenir.
+
+**Gereken Polycam çıktıları** (Basic plan; hepsi aynı klasörde, aynı adla):
+
+| Dosya | Polycam'de |
+|---|---|
+| `<ad>.dxf` + `<ad>.csv` | Floor plan → DXF / CSV (kat planı zip'i de seçilebilir) |
+| `<ad>.laz` | Point cloud → LAS — **georeferenced kapalı** (`<ad> georef.laz` kullanılmaz) |
+| `<ad>.glb` | Mesh → GLTF |
+
+1. Boş bir proje açın (Architectural şablon yeterli).
+2. **pyKalfa** → **Duvar** → **Rolove Aktar** ve DXF'i (ya da zip'i) seçin;
+   diğer dosyalar otomatik bulunur, eksik olan söylenir.
+3. Hazırlık birkaç saniye sürer (örnek 4 katlı evde ~5 s). Özet penceresi
+   kat kotlarını (ana kat = 0.00), her katın taramaya oturup oturmadığını
+   ve duvar durumlarını gösterir; kotlar düzeltilebilir. Kat başına PNG
+   önizleme `output/` altına yazılır.
+4. Dış duvar tipini **bir kez**, her iç duvar kalınlık grubu için bir tip,
+   kapı ve pencere ailesini seçin (ya da "Opening kullan").
+5. Level'lar `Kat N (Scan)` adıyla, duvarlar her katın kendi Level'ında
+   oluşur. Dış duvarlar taranan **iç yüzden dışa doğru** kalınlaşır
+   (Location Line = Finish Face: Interior).
+
+Her duvar/kapı/pencere `pyKalfa Tarama Durumu` parametresini taşır:
+**olculdu** (LAZ'dan ölçüldü), **duzeltildi** (DXF konumu taramaya göre
+düzeltildi), **varsayildi** (varsayılan ya da doğrulanamadı — kontrol
+edin). Görünüm filtresiyle renklendirilebilir. Ölçüler en yakın 5 cm'ye,
+kotlar 1 cm'ye yuvarlanır; konumlar yuvarlanmaz.
+
+Butonu aynı projede tekrar çalıştırmak güvenlidir: daha önce oluşturulan
+elemanlar (taşınmış olsalar bile) korunur, sildikleriniz geri gelmez,
+yalnız eksikler eklenir.
 
 ## Lisans
 
