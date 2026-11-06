@@ -20,6 +20,8 @@ BUILDING_FILL = (0, 200, 0)
 FILL_ALPHA = 0.35
 LINE_THICKNESS = 2
 LABEL_COLOR = (120, 0, 120)      # BGR - mor
+ROAD_COLOR = (150, 150, 150)     # BGR - acik gri
+STREET_COLOR = (60, 60, 60)      # BGR - koyu gri
 PX_PER_M = 8.0
 MAX_SIDE_PX = 2000
 
@@ -50,6 +52,9 @@ def render(data):
     canvas = cv2.addWeighted(overlay, FILL_ALPHA, canvas, 1 - FILL_ALPHA, 0)
     cv2.drawContours(canvas, contours, -1, BUILDING_COLOR, LINE_THICKNESS)
 
+    for p1, p2 in data.get("road_lines") or []:
+        cv2.line(canvas, px(p1), px(p2), ROAD_COLOR, 1, cv2.LINE_AA)
+
     for p1, p2 in data.get("parcel_lines") or []:
         cv2.line(canvas, px(p1), px(p2), PARCEL_COLOR, LINE_THICKNESS)
 
@@ -60,6 +65,14 @@ def render(data):
         (tw, th), _ = cv2.getTextSize(text, cv2.FONT_HERSHEY_SIMPLEX, 0.45, 1)
         cv2.putText(canvas, text, (x - tw // 2, y + th // 2), cv2.FONT_HERSHEY_SIMPLEX,
                     0.45, LABEL_COLOR, 1, cv2.LINE_AA)
+
+    # Sokak adlari: onizlemede dondurulmez, yalniz noktaya ortalanir
+    for street in data.get("street_labels") or []:
+        x, y = px(street["position_ft"])
+        text = street.get("text") or ""
+        (tw, th), _ = cv2.getTextSize(text, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 1)
+        cv2.putText(canvas, text, (x - tw // 2, y + th // 2), cv2.FONT_HERSHEY_SIMPLEX,
+                    0.5, STREET_COLOR, 1, cv2.LINE_AA)
 
     north = data.get("north")
     if north:

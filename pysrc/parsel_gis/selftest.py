@@ -299,6 +299,79 @@ def test_suggest_cli_capakey_mode():
     assert json.loads(out.read_text(encoding="utf-8"))["candidates"] == []
 
 
+# --- Yol / kaldirim kenarlari ve sokak adlari ---------------------------------
+
+def _path_feature(oid, path, **attrs):
+    a = {"OBJECTID": oid}
+    a.update(attrs)
+    return {"attributes": a, "geometry": {"paths": [path]}}
+
+
+def test_road_lines_query_filters_natures():
+    fake = install([(services.PICC_ROAD_LINES, {"features": [
+        _path_feature(1, [[0, 0], [10, 0]], NATUR_DESC="Voirie - Bord"),
+        _path_feature(2, [[0, 5], [10, 5]], NATUR_DESC="Trottoir"),
+        _path_feature(2, [[0, 5], [10, 5]], NATUR_DESC="Trottoir"),  # tekrar
+    ]})])
+    roads = services.road_lines_in_box((0, 0, 50, 50))
+    assert [r["id"] for r in roads] == [1, 2] and roads[0]["paths"] == [[[0.0, 0.0], [10.0, 0.0]]]
+    where = fake.calls_to(services.PICC_ROAD_LINES)[0]["where"]
+    for nature in ("Voirie - Bord", "Chemin - Bord", "Trottoir"):
+        assert "'{}'".format(nature) in where, where
+    assert "Bordure" not in where and "Parking" not in where
+
+
+def test_street_axes_name_fallback():
+    install([(services.PICC_AXES, {"features": [
+        _path_feature(1, [[0, 0], [10, 0]], RUE_NOM1="Rue de l'Évêché"),
+        _path_feature(2, [[0, 0], [0, 10]], RUE_NOM1=None, VOIRIE_NOM="N617a"),
+        _path_feature(3, [[5, 5], [9, 9]], RUE_NOM1=" ", VOIRIE_NOM=None),
+    ]})])
+    axes = services.street_axes_in_box((0, 0, 50, 50))
+    assert [a["name"] for a in axes] == ["Rue de l'Évêché", "N617a"], axes
+
+
+def test_road_segments_clipped_and_deduped():
+    roads = [{"id": 1, "paths": [[[-10, 0], [30, 0]]]}, {"id": 2, "paths": [[[5, 0], [15, 0]]]}]
+    segs = layout.road_segments(roads, (0, -5, 20, 5))
+    assert abs(_len_m(segs) - 20.0) < 0.01, _len_m(segs)  # 40 m cizgi cercevede 20 m, ust uste binen tek
+
+
+def test_street_label_once_on_longest_part_centered():
+    axes = [
+        {"id": 1, "name": "Rue A", "paths": [[[0, 10], [100, 10]]]},
+        {"id": 2, "name": "Rue A", "paths": [[[100, 10], [100, 15]]]},   # ayni sokak, kisa parca
+        {"id": 3, "name": "Rue B", "paths": [[[50, 0], [50, 4]]]},       # cok kisa: yazilmaz
+    ]
+    labels = layout.street_labels(axes, (0, 0, 120, 40))
+    assert [l["text"] for l in labels] == ["Rue A"], labels
+    # birlesik eksen (0,10)-(100,10)-(100,15) = 105 m; orta nokta 52.5 m -> (52.5, 10)
+    assert labels[0]["position_ft"] == [round(52.5 * FT, 3), round(10 * FT, 3)], labels[0]
+    assert labels[0]["rotation_deg"] == 0.0
+
+
+def test_street_label_rotation_follows_road_and_stays_readable():
+    up = layout.street_labels([{"id": 1, "name": "Rue N", "paths": [[[10, 0], [10, 50]]]}], (0, 0, 20, 60))
+    down = layout.street_labels([{"id": 1, "name": "Rue S", "paths": [[[10, 50], [10, 0]]]}], (0, 0, 20, 60))
+    diag = layout.street_labels([{"id": 1, "name": "Rue D", "paths": [[[40, 40], [0, 0]]]}], (0, 0, 50, 50))
+    assert up[0]["rotation_deg"] == 90.0 and down[0]["rotation_deg"] == 90.0, (up, down)
+    assert diag[0]["rotation_deg"] == 45.0, diag  # ters (225 derece) okunmaz -> 45
+
+
+def test_prepare_includes_roads_and_streets():
+    world = _world() + [
+        (services.PICC_ROAD_LINES, {"features": [_path_feature(1, [[199990, 99995], [200050, 99995]], NATUR_DESC="Voirie - Bord")]}),
+        (services.PICC_AXES, {"features": [_path_feature(5, [[199980, 99990], [200060, 99990]], RUE_NOM1="Rue du Parc")]}),
+    ]
+    install(world)
+    data = prepare_gis_input.prepare("92053D0515/00B002", None, None, 30, _tmp())
+    assert data["road_lines"] and data["road_line_count"] == len(data["road_lines"])
+    assert [s["text"] for s in data["street_labels"]] == ["Rue du Parc"]
+    install(world)
+    off = prepare_gis_input.prepare("92053D0515/00B002", None, None, 30, _tmp(), roads=False, streets=False)
+    assert off["road_lines"] == [] and off["street_labels"] == []
+
+
 def test_suggest_cli_resolves_point():
     install(_world())
     out = _tmp() / "p.json"

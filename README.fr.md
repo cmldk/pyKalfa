@@ -114,7 +114,9 @@ attributs cadastraux de la parcelle.
    - indiquez **combien de mètres** autour de la parcelle inclure (80 par
      défaut, 200 au maximum)
    - les **mêmes choix de styles** que Parsel/Bina Aktar : lignes de
-     parcelles, cadre (ou *« Cerceve cizme »*), Filled Region Type des
+     parcelles, cadre (ou *« Cerceve cizme »*), bords de voirie et de
+     trottoir (ou *« Yol cizme »*), Text Note Type des noms de rues (ou
+     *« Sokak adi yazma »*), Filled Region Type des
      bâtiments, Text Note Type des numéros, flèche du nord (ou *« Kuzey
      oku ekleme »*)
 4. Les données sont récupérées en quelques secondes avec une barre de
@@ -127,11 +129,18 @@ attributs cadastraux de la parcelle.
 > données sont orientées nord en haut, la flèche du nord est donc posée à
 > 0°.
 
+> Les bords de voirie et de trottoir viennent de la couche PICC « Voirie -
+> Ligne » (bord de voirie, bord de chemin, arrière du trottoir ; bordures,
+> parkings, passages piétons, etc. ne sont pas dessinés). Les noms de rues
+> viennent des axes de voirie : chaque nom une fois, au milieu de sa plus
+> longue partie d'axe, tourné dans le sens de la rue et centré. En zone
+> rurale peu détaillée au PICC, il peut n'y avoir aucune ligne de voirie.
+
 > Les numéros de parcelles viennent des données : aucune erreur d'OCR.
 > Une image de contrôle est laissée dans `output/revit_input_preview.png`.
 >
 > Source : Plan parcellaire cadastral © AGDP/SPF Finances, via SPW ;
-> Bâtiments © SPW (PICC_VDIFF).
+> Bâtiments, voirie © SPW (PICC_VDIFF).
 
 ### Duvar Aktar — murs à partir d'un DXF
 

@@ -1,7 +1,7 @@
 """Parsel-Bina GIS: parsel -> `revit_input.json` (+ dogrulama gorseli).
 
     prepare_gis_input.py --capakey 92053D0515/00B002 --margin 80 --output-dir output
-    prepare_gis_input.py --x 210000 --y 120000 --margin 80 --output-dir output [--no-labels]
+    prepare_gis_input.py --x 210000 --y 120000 --margin 80 --output-dir output [--no-labels] [--no-roads] [--no-streets]
 
 Cikti bicimi mevcut Parsel/Bina Aktar butonunun `revit_input.json`'u ile
 aynidir (`parcel_lines`, `frame_lines`, `buildings`, `labels`, `north`),
@@ -24,7 +24,7 @@ import preview
 import services
 from gis_http import UpstreamError
 
-ATTRIBUTION = "Plan parcellaire cadastral © AGDP/SPF Finances, via SPW ; Bâtiments © SPW (PICC_VDIFF)"
+ATTRIBUTION = "Plan parcellaire cadastral © AGDP/SPF Finances, via SPW ; Bâtiments, voirie © SPW (PICC_VDIFF)"
 
 
 class NotFound(Exception):
@@ -39,7 +39,7 @@ def _progress(percent, message):
     print("PROGRESS|{}|{}".format(percent, message), flush=True)
 
 
-def prepare(capakey, x, y, margin_m, output_dir, labels=True):
+def prepare(capakey, x, y, margin_m, output_dir, labels=True, roads=True, streets=True):
     if not (0 < margin_m <= layout.MAX_MARGIN_M):
         raise BadInput("Pay 0 ile {:.0f} m arasinda olmali (verilen: {})".format(layout.MAX_MARGIN_M, margin_m))
     output_dir = Path(output_dir)
@@ -65,13 +65,18 @@ def prepare(capakey, x, y, margin_m, output_dir, labels=True):
     parcels = services.parcels_in_box(box)
     if not any(p["capakey"] == selected["capakey"] for p in parcels):
         parcels.append(selected)
-    _progress(60, "Binalar")
+    _progress(50, "Binalar")
     buildings = services.buildings_in_box(box)
+    _progress(65, "Yollar")
+    road_items = services.road_lines_in_box(box) if roads else []
+    axes = services.street_axes_in_box(box) if streets else []
 
     _progress(85, "Geometri")
     parcel_lines = layout.parcel_segments(parcels, box)
     regions = layout.building_regions(buildings, box)
     label_records = layout.parcel_labels(parcels, box) if labels else []
+    road_lines = layout.road_segments(road_items, box)
+    street_records = layout.street_labels(axes, box)
 
     data = {
         "source": "GIS",
@@ -89,6 +94,12 @@ def prepare(capakey, x, y, margin_m, output_dir, labels=True):
         "north": layout.north_record(box),
         "buildings": regions,
         "labels": label_records,
+        "road_line_count": len(road_lines),
+        "road_lines_note": "Yol ve kaldirim kenarlari (PICC 20: Voirie - Bord, Chemin - Bord, Trottoir); DetailLine segmentleri, ust uste binenler tek.",
+        "road_lines": road_lines,
+        "street_label_count": len(street_records),
+        "street_labels_note": "Sokak adlari (PICC 21 RUE_NOM1, yoksa VOIRIE_NOM); position_ft metnin ORTASI, rotation_deg yol yonu (-90..90].",
+        "street_labels": street_records,
     }
 
     _progress(95, "Onizleme")
@@ -97,9 +108,10 @@ def prepare(capakey, x, y, margin_m, output_dir, labels=True):
     with open(output_dir / "revit_input.json", "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
     _progress(100, "Tamamlandi")
-    print("Parsel {} ({}) | parsel: {} | cizgi: {} | bina: {} | etiket: {} -> {}".format(
+    print("Parsel {} ({}) | parsel: {} | cizgi: {} | bina: {} | etiket: {} | yol: {} | sokak: {} -> {}".format(
         data["selected"]["numero"], selected["capakey"], len(parcels), len(parcel_lines),
-        len(regions), len(label_records), output_dir / "revit_input.json"), flush=True)
+        len(regions), len(label_records), len(road_lines), len(street_records),
+        output_dir / "revit_input.json"), flush=True)
     return data
 
 
@@ -111,9 +123,12 @@ def main(argv=None):
     parser.add_argument("--margin", type=float, default=80.0)
     parser.add_argument("--output-dir", type=Path, default=Path("output"))
     parser.add_argument("--labels", action=argparse.BooleanOptionalAction, default=True)
+    parser.add_argument("--roads", action=argparse.BooleanOptionalAction, default=True)
+    parser.add_argument("--streets", action=argparse.BooleanOptionalAction, default=True)
     args = parser.parse_args(argv)
     try:
-        prepare(args.capakey, args.x, args.y, args.margin, args.output_dir, labels=args.labels)
+        prepare(args.capakey, args.x, args.y, args.margin, args.output_dir,
+                labels=args.labels, roads=args.roads, streets=args.streets)
     except UpstreamError as ex:
         print("ERROR|Servis hatasi: {}".format(ex), flush=True)
         return 2

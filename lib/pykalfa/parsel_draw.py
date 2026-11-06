@@ -107,14 +107,36 @@ def _rotate(doc, element_id, position, rotation_deg):
         ElementTransformUtils.RotateElement(doc, element_id, axis, math.radians(rotation_deg))
 
 
+def _draw_notes(doc, view, items, text_type, z, what):
+    """Ortalanmis ve `rotation_deg` kadar dondurulmus TextNote'lar; (olusan, atlanan)."""
+    created = 0
+    skipped = 0
+    for item in items:
+        try:
+            position = XYZ(item["position_ft"][0], item["position_ft"][1], z)
+            note = _create_centered_note(doc, view, position, item["text"], text_type)
+            # Not noktaya ortali oldugu icin ayni nokta etrafinda dondurmek
+            # metni yerinde (yol yonunde) cevirir, kaydirmaz.
+            _rotate(doc, note.Id, position, item.get("rotation_deg") or 0.0)
+            created += 1
+        except Exception as ex:
+            logger.debug("{} '{}' olusturulamadi: {}".format(what, item.get("text"), ex))
+            skipped += 1
+    return created, skipped
+
+
 def draw_revit_input(doc, view, data, line_style, frame_style, region_type,
-                     text_type, north_symbol, transaction_name):
+                     text_type, north_symbol, transaction_name,
+                     road_style=None, street_text_type=None):
     """Sayimlari dondurur: lines, lines_skipped, frame, frame_skipped,
-    regions, regions_skipped, labels, labels_skipped, north (0/1).
-    `frame_style`, `text_type`, `north_symbol` None olabilir."""
+    roads, roads_skipped, regions, regions_skipped, labels, labels_skipped,
+    streets, streets_skipped, north (0/1).
+    `frame_style`, `text_type`, `north_symbol`, `road_style`,
+    `street_text_type` None olabilir (None = o parca cizilmez)."""
     z = view_elevation(view)
-    counts = dict(lines=0, lines_skipped=0, frame=0, frame_skipped=0, regions=0,
-                  regions_skipped=0, labels=0, labels_skipped=0, north=0)
+    counts = dict(lines=0, lines_skipped=0, frame=0, frame_skipped=0, roads=0, roads_skipped=0,
+                  regions=0, regions_skipped=0, labels=0, labels_skipped=0,
+                  streets=0, streets_skipped=0, north=0)
 
     t = Transaction(doc, transaction_name)
     opts = t.GetFailureHandlingOptions()
@@ -129,6 +151,10 @@ def draw_revit_input(doc, view, data, line_style, frame_style, region_type,
             counts["frame"], counts["frame_skipped"] = _draw_segments(
                 doc, view, data.get("frame_lines") or [], frame_style, z, "Cerceve")
 
+        if road_style is not None:
+            counts["roads"], counts["roads_skipped"] = _draw_segments(
+                doc, view, data.get("road_lines") or [], road_style, z, "Yol")
+
         for building in data.get("buildings") or []:
             if _draw_region(doc, view, building, region_type, z):
                 counts["regions"] += 1
@@ -136,15 +162,12 @@ def draw_revit_input(doc, view, data, line_style, frame_style, region_type,
                 counts["regions_skipped"] += 1
 
         if text_type is not None:
-            for label in data.get("labels") or []:
-                try:
-                    position = XYZ(label["position_ft"][0], label["position_ft"][1], z)
-                    note = _create_centered_note(doc, view, position, label["text"], text_type)
-                    _rotate(doc, note.Id, position, label.get("rotation_deg") or 0.0)
-                    counts["labels"] += 1
-                except Exception as ex:
-                    logger.debug("Etiket '{}' olusturulamadi: {}".format(label.get("text"), ex))
-                    counts["labels_skipped"] += 1
+            counts["labels"], counts["labels_skipped"] = _draw_notes(
+                doc, view, data.get("labels") or [], text_type, z, "Etiket")
+
+        if street_text_type is not None:
+            counts["streets"], counts["streets_skipped"] = _draw_notes(
+                doc, view, data.get("street_labels") or [], street_text_type, z, "Sokak adi")
 
         north = data.get("north")
         if north_symbol is not None and north:

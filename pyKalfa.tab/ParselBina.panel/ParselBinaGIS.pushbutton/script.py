@@ -33,6 +33,8 @@ logger = script.get_logger()
 FEATURE = "parsel_gis"
 NO_FRAME_LABEL = "-- Cerceve cizme --"
 NO_NORTH_LABEL = "-- Kuzey oku ekleme --"
+NO_ROAD_LABEL = "-- Yol cizme --"
+NO_STREET_LABEL = "-- Sokak adi yazma --"
 DEFAULT_MARGIN_M = "80"
 MAX_MARGIN_M = 200.0
 PRECISION_LABELS = {
@@ -177,6 +179,18 @@ try:
         title="Cizim cercevesi (goruntunun dis siniri) icin line style secin",
         skip_label=NO_FRAME_LABEL,
     )
+    # Yol ve kaldirim kenarlari (PICC) tek bir line style ile cizilir.
+    chosen_road_style = selectors.pick_line_style(
+        doc,
+        title="Yol ve kaldirim kenarlari icin line style secin",
+        skip_label=NO_ROAD_LABEL,
+    )
+    # Sokak adlari parsel numaralarindan farkli boyda yazilabilsin diye ayri sorulur.
+    chosen_street_text_type = selectors.pick_text_note_type(
+        doc,
+        title="Sokak adlari icin text note tipi secin",
+        skip_label=NO_STREET_LABEL,
+    )
     chosen_region_type = selectors.pick_filled_region_type(
         doc, title="Binalar icin filled region tipi secin"
     )
@@ -201,6 +215,10 @@ except Exception as ex:
 prepare_args = ["--capakey", location["capakey"], "--margin", repr(margin_m), "--output-dir", OUTPUT_DIR]
 if chosen_text_note_type is None:
     prepare_args.append("--no-labels")
+if chosen_road_style is None:
+    prepare_args.append("--no-roads")
+if chosen_street_text_type is None:
+    prepare_args.append("--no-streets")
 
 _remove(JSON_PATH)
 state = {"percent": 0, "message": "Baslatiliyor", "dirty": True, "display": 0, "ticks": 0}
@@ -260,6 +278,8 @@ try:
         chosen_line_style, chosen_frame_style, chosen_region_type,
         chosen_text_note_type, chosen_north_symbol,
         "pyKalfa: parsel/bina GIS aktarimi",
+        road_style=chosen_road_style,
+        street_text_type=chosen_street_text_type,
     )
 except Exception as ex:
     forms.alert("Islem geri alindi, hata olustu:\n{}\n\n{}".format(ex, traceback.format_exc()))
@@ -278,9 +298,13 @@ summary += u"Alan: parsel ± {:g} m\n\n".format(margin_m)
 summary += u"Parsel cizgisi: {} olusturuldu, {} atlandi\n".format(counts["lines"], counts["lines_skipped"])
 if chosen_frame_style is not None:
     summary += u"Cerceve cizgisi: {} olusturuldu, {} atlandi\n".format(counts["frame"], counts["frame_skipped"])
+if chosen_road_style is not None:
+    summary += u"Yol/kaldirim cizgisi: {} olusturuldu, {} atlandi\n".format(counts["roads"], counts["roads_skipped"])
 summary += u"Bina blogu (filled region): {} olusturuldu, {} atlandi\n".format(
     counts["regions"], counts["regions_skipped"])
 summary += u"Parsel etiketi (text): {} olusturuldu, {} atlandi".format(counts["labels"], counts["labels_skipped"])
+if chosen_street_text_type is not None:
+    summary += u"\nSokak adi (text): {} olusturuldu, {} atlandi".format(counts["streets"], counts["streets_skipped"])
 if chosen_north_symbol is not None:
     summary += u"\nKuzey oku: {}".format(u"eklendi" if counts["north"] else u"eklenemedi")
 summary += u"\n\nDogrulama gorseli:\n{}".format(preview_path)

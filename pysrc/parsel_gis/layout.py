@@ -26,6 +26,8 @@ MAX_MARGIN_M = 200.0
 # kisa kenari atlar ve bina loop'u kopar; bu yuzden esik onun ustunde tutulur.
 MIN_SEGMENT_M = 0.02
 MIN_REGION_AREA_M2 = 0.5
+MIN_STREET_LABEL_M = 15.0   # cerceve icinde bundan kisa kalan sokak adi yazilmaz
+STREET_TANGENT_M = 2.0      # yazi acisi orta noktanin +- bu kadar cevresinden olculur
 
 
 def _ring_area(r):
@@ -84,8 +86,18 @@ def parcel_segments(parcels, box):
     """Cerceve icindeki parsel sinirlari; komsu parsellerin ortak kenari tek kez."""
     if not parcels:
         return []
-    lines = [shapely.set_precision(rings_to_geom(p["rings"]).boundary, SNAP_M) for p in parcels]
-    merged = shapely.unary_union(lines)
+    return _segments([rings_to_geom(p["rings"]).boundary for p in parcels], box)
+
+
+def road_segments(roads, box):
+    """Cerceve icindeki yol/kaldirim kenarlari; ust uste binen parcalar tek kez."""
+    lines = [LineString(path) for r in roads for path in r["paths"] if len(path) >= 2]
+    return _segments(lines, box) if lines else []
+
+
+def _segments(lines, box):
+    """Cizgileri birlestirip (cakisanlar tek) cerceveye kirpar, ft segmentlere boler."""
+    merged = shapely.unary_union([shapely.set_precision(g, SNAP_M) for g in lines])
     inside = merged.intersection(shapely.box(*box))
     segments = []
     for line in _lines(inside):
@@ -151,3 +163,38 @@ def north_record(box):
     """Veri kuzey yukari: ok 0 derece, cercevenin sag-ust kosesinden iceride."""
     return {"position_ft": to_local_ft(box[2] - NORTH_INSET_M, box[3] - NORTH_INSET_M, box),
             "rotation_deg": 0.0}
+
+
+def readable_angle(deg):
+    """Aciyi (-90, 90] araligina getirir: yazi yol yonunde ama ters okunmaz."""
+    a = deg % 180.0
+    if a > 90.0:
+        a -= 180.0
+    return round(a, 2) + 0.0
+
+
+def street_labels(axes, box):
+    """Her sokak adi bir kez: cerceve icindeki en uzun birlesik eksen parcasinin
+    ortasina, yol yonunde dondurulmus. Konum metnin ORTASIDIR (Revit'te ortali)."""
+    frame = shapely.box(*box)
+    by_name = {}
+    for a in axes:
+        by_name.setdefault(a["name"], []).extend(
+            LineString(p) for p in a["paths"] if len(p) >= 2)
+    out = []
+    for name in sorted(by_name, key=lambda n: n.lower()):
+        merged = shapely.line_merge(shapely.unary_union(by_name[name]).intersection(frame))
+        parts = [g for g in _lines(merged) if g.length > 0]
+        if not parts:
+            continue
+        line = max(parts, key=lambda g: g.length)
+        if line.length < MIN_STREET_LABEL_M:
+            continue
+        d = line.length / 2.0
+        mid = line.interpolate(d)
+        p1 = line.interpolate(max(0.0, d - STREET_TANGENT_M))
+        p2 = line.interpolate(min(line.length, d + STREET_TANGENT_M))
+        angle = math.degrees(math.atan2(p2.y - p1.y, p2.x - p1.x))
+        out.append({"id": len(out), "text": name, "position_ft": to_local_ft(mid.x, mid.y, box),
+                    "rotation_deg": readable_angle(angle)})
+    return out

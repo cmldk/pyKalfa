@@ -17,11 +17,17 @@ SPW = "https://geoservices.wallonie.be/arcgis/rest/services/"
 GEOCODE_WS = "https://geoservices.wallonie.be/geocodeWS"
 CADMAP_LAYER = SPW + "PLAN_REGLEMENT/CADMAP_PARCELLES/MapServer/0"
 PICC_LAYER = SPW + "TOPOGRAPHIE/PICC_VDIFF/MapServer/11"
+PICC_ROAD_LINES = SPW + "TOPOGRAPHIE/PICC_VDIFF/MapServer/20"   # Voirie - Ligne
+PICC_AXES = SPW + "TOPOGRAPHIE/PICC_VDIFF/MapServer/21"         # Voirie - Axe (sokak adlari)
+# Yol ve kaldirim kenarlari. "Bordure" bilerek yok: cogu zaman "Voirie - Bord"un
+# ~0.2 m disinda ikinci bir cizgi olarak durur (bkz. planpack voirie_largeur.py).
+ROAD_NATURES = ("Voirie - Bord", "Chemin - Bord", "Trottoir")
 CAPAKEY_RE = re.compile(r"^\d{5}[A-Z_]\d{4}/\d{2}[A-Z0-9_]\d{3}$")
 ADDRESS_SEARCH_M = 20
 SUGGEST_TIMEOUT = 10
 PARCEL_FIELDS = "OBJECTID,CAPAKEY,CAPATY,COMMUNE,NOM_COMMUNE,CODE_DIV,DIV_NOM,SECT,RADICAL,BIS,EXPOSANT,PUISSANCE,VER"
 BUILDING_FIELDS = "OBJECTID,NATUR_DESC"
+AXIS_FIELDS = "OBJECTID,RUE_NOM1,VOIRIE_NOM"
 MAX_PAGES = 10
 _BOUNDS = (0.0, 0.0, 400000.0, 300000.0)
 
@@ -186,7 +192,7 @@ def parcel_by_point(x, y, search_m=0):
     return items[0] if items else None
 
 
-def _query_box(layer, box, fields):
+def _query_box(layer, box, fields, where=None):
     """Envelope ile kesisen tum feature'lar, `exceededTransferLimit` bitene dek sayfalanir."""
     base = {"geometry": ",".join("{:.2f}".format(v) for v in box), "geometryType": "esriGeometryEnvelope",
             "inSR": 31370, "spatialRel": "esriSpatialRelIntersects", "outFields": fields,
@@ -194,6 +200,8 @@ def _query_box(layer, box, fields):
     # Ilk sayfa da resultOffset + orderByFields ile istenir: sunucu bunlarsiz
     # sorguyu farkli siralayip sayfalar arasinda kayit tekrarliyor/kaybediyor.
     base.update({"orderByFields": "OBJECTID"})
+    if where:
+        base["where"] = where
     pages, offset = [], 0
     for _ in range(MAX_PAGES):
         params = dict(base)
@@ -239,3 +247,47 @@ def buildings_in_box(box):
             out.append({"id": a.get("OBJECTID"), "nature": nature, "rings": rings})
     return _first_seen(out, lambda b: b["id"] if b["id"] is not None else id(b))
 
+
+def _clean_paths(geom):
+    paths = []
+    for path in (geom or {}).get("paths") or []:
+        try:
+            pts = [[float(p[0]), float(p[1])] for p in path]
+        except (TypeError, ValueError, IndexError):
+            continue
+        if len(pts) >= 2 and all(_xy_ok(x, y) for x, y in pts):
+            paths.append(pts)
+    return paths
+
+
+def _path_items(layer, box, fields, where=None):
+    out = []
+    for res in _query_box(layer, box, fields, where):
+        for f in res.get("features") or []:
+            if not isinstance(f, dict):
+                continue
+            paths = _clean_paths(f.get("geometry"))
+            if paths:
+                out.append((f.get("attributes") or {}, paths))
+    return _first_seen(out, lambda it: it[0].get("OBJECTID") if it[0].get("OBJECTID") is not None else id(it))
+
+
+def road_lines_in_box(box):
+    """Yol ve kaldirim kenarlari (ROAD_NATURES): [{"id", "nature", "paths"}]."""
+    where = "NATUR_DESC IN ({})".format(", ".join("'{}'".format(n) for n in ROAD_NATURES))
+    return [{"id": a.get("OBJECTID"), "nature": a.get("NATUR_DESC"), "paths": paths}
+            for a, paths in _path_items(PICC_ROAD_LINES, box, "OBJECTID,NATUR_DESC", where)]
+
+
+def _name(v):
+    return " ".join(str(v or "").split())
+
+
+def street_axes_in_box(box):
+    """Yol eksenleri: [{"id", "name", "paths"}]; ad = sokak adi, yoksa yol numarasi, yoksa atlanir."""
+    out = []
+    for a, paths in _path_items(PICC_AXES, box, AXIS_FIELDS):
+        name = _name(a.get("RUE_NOM1")) or _name(a.get("VOIRIE_NOM"))
+        if name:
+            out.append({"id": a.get("OBJECTID"), "name": name, "paths": paths})
+    return out

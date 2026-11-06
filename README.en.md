@@ -105,7 +105,9 @@ parcel's cadastral attributes.
    - enter **how many metres** around the parcel to include (default 80,
      maximum 200)
    - the **same style choices** as Parsel/Bina Aktar: parcel lines, frame
-     (or *"Cerceve cizme"*), building Filled Region Type, parcel number
+     (or *"Cerceve cizme"*), road and sidewalk edges (or *"Yol cizme"*),
+     Text Note Type for street names (or *"Sokak adi yazma"*), building
+     Filled Region Type, parcel number
      Text Note Type, north arrow (or *"Kuzey oku ekleme"*)
 4. The data is fetched in a few seconds behind a progress bar, then drawn,
    and a summary opens.
@@ -116,11 +118,18 @@ parcel's cadastral attributes.
 > Aktar, the origin is the frame's bottom-left corner; the data is
 > north-up, so the north arrow is placed at 0°.
 
+> Road and sidewalk edges come from the PICC "Voirie - Ligne" layer (road
+> edge, path edge, back edge of the sidewalk; kerb stones, parking bays,
+> crossings etc. are not drawn). Street names come from the road axes: each
+> name once, at the middle of its longest axis part, rotated along the road
+> and centred. Rural areas where the PICC is not detailed may have no road
+> lines.
+
 > Parcel numbers come from the data, so there are no OCR errors. A check
 > image is left at `output/revit_input_preview.png`.
 >
 > Source: Plan parcellaire cadastral © AGDP/SPF Finances, via SPW ;
-> Bâtiments © SPW (PICC_VDIFF).
+> Bâtiments, voirie © SPW (PICC_VDIFF).
 
 ### Duvar Aktar — walls from DXF
 

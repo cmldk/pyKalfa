@@ -105,7 +105,9 @@ parsel numaraları parselin kadastro özniteliklerinden gelir.
    - parselin etrafında **kaç metre** alınacağını yazın (varsayılan 80,
      en fazla 200)
    - Parsel/Bina Aktar'daki **aynı stil seçimleri**: parsel çizgileri,
-     çerçeve (veya *"Cerceve cizme"*), bina Filled Region Type, parsel
+     çerçeve (veya *"Cerceve cizme"*), yol ve kaldırım kenarları (veya
+     *"Yol cizme"*), sokak adları için Text Note Type (veya *"Sokak adi
+     yazma"*), bina Filled Region Type, parsel
      numarası Text Note Type, kuzey oku (veya *"Kuzey oku ekleme"*)
 4. Veri birkaç saniyede bir ilerleme çubuğuyla alınır, sonra çizilir ve
    özet açılır.
@@ -116,11 +118,17 @@ parsel numaraları parselin kadastro özniteliklerinden gelir.
 > gibi çerçevenin sol-alt köşesidir; veri kuzey yukarı olduğu için kuzey
 > oku 0° konur.
 
+> Yol ve kaldırım kenarları PICC "Voirie - Ligne" katmanından gelir (yol
+> kenarı, patika kenarı, kaldırım arka kenarı; bordür, park yeri, yaya geçidi
+> vb. çizilmez). Sokak adları yol eksenlerinden gelir: her ad bir kez, en uzun
+> eksen parçasının ortasına, yol yönünde döndürülmüş ve ortalanmış yazılır.
+> PICC'nin ayrıntılı olmadığı kırsal yerlerde yol çizgisi çıkmayabilir.
+
 > Parsel numaraları veriden okunduğu için OCR hatası yoktur. Kontrol için
 > `output/revit_input_preview.png` görseli bırakılır.
 >
 > Kaynak: Plan parcellaire cadastral © AGDP/SPF Finances, via SPW ;
-> Bâtiments © SPW (PICC_VDIFF).
+> Bâtiments, voirie © SPW (PICC_VDIFF).
 
 ### Duvar Aktar
 

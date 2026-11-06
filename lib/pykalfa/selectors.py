@@ -109,12 +109,13 @@ def pick_filled_region_type(doc, title="Filled region tipi secin"):
     )
 
 
-def pick_text_note_type(doc, title="Text note tipi secin", optional=False):
+def pick_text_note_type(doc, title="Text note tipi secin", optional=False, skip_label=None):
     return pick_by_name(
         FilteredElementCollector(doc).OfClass(TextNoteType),
         title,
         "Projede tanimli bir Text Note Type bulunamadi.",
         optional=optional,
+        skip_label=skip_label,
     )
 
 
