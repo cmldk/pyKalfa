@@ -78,6 +78,29 @@ def _draw_region(doc, view, building, region_type, z):
         return False
 
 
+def _create_centered_note(doc, view, position, text, text_type):
+    """Metni `position` noktasina ORTALANMIS olarak koyar.
+
+    `TextNote.Create(..., typeId)` noktayi metnin SOL-UST kosesi sayar; bu
+    yuzden etiket parselin icindeki noktadan saga-asagi kayiyordu
+    (onizleme ise metni noktaya ortalar). TextNoteOptions ile yatay/dikey
+    orta hizalama verilir; eski Revit surumlerinde VerticalAlignment yoksa
+    yalniz yatay ortalama, o da yoksa varsayilan olusturma kullanilir."""
+    try:
+        from Autodesk.Revit.DB import HorizontalTextAlignment, TextNoteOptions
+        opts = TextNoteOptions(text_type.Id)
+        opts.HorizontalAlignment = HorizontalTextAlignment.Center
+        try:
+            from Autodesk.Revit.DB import VerticalTextAlignment
+            opts.VerticalAlignment = VerticalTextAlignment.Middle
+        except Exception as ex:
+            logger.debug("Dikey ortalama desteklenmiyor: {}".format(ex))
+        return TextNote.Create(doc, view.Id, position, text, opts)
+    except Exception as ex:
+        logger.debug("TextNoteOptions kullanilamadi, varsayilan hizalama: {}".format(ex))
+        return TextNote.Create(doc, view.Id, position, text, text_type.Id)
+
+
 def _rotate(doc, element_id, position, rotation_deg):
     if rotation_deg:
         axis = Line.CreateBound(position, position + XYZ.BasisZ)
@@ -116,7 +139,7 @@ def draw_revit_input(doc, view, data, line_style, frame_style, region_type,
             for label in data.get("labels") or []:
                 try:
                     position = XYZ(label["position_ft"][0], label["position_ft"][1], z)
-                    note = TextNote.Create(doc, view.Id, position, label["text"], text_type.Id)
+                    note = _create_centered_note(doc, view, position, label["text"], text_type)
                     _rotate(doc, note.Id, position, label.get("rotation_deg") or 0.0)
                     counts["labels"] += 1
                 except Exception as ex:

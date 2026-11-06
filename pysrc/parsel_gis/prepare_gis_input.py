@@ -1,7 +1,7 @@
 """Parsel-Bina GIS: parsel -> `revit_input.json` (+ dogrulama gorseli).
 
-    prepare_gis_input.py --capakey 92053D0515/00B002 --margin 30 --output-dir output
-    prepare_gis_input.py --x 210000 --y 120000 --margin 30 --output-dir output [--no-labels]
+    prepare_gis_input.py --capakey 92053D0515/00B002 --margin 80 --output-dir output
+    prepare_gis_input.py --x 210000 --y 120000 --margin 80 --output-dir output [--no-labels]
 
 Cikti bicimi mevcut Parsel/Bina Aktar butonunun `revit_input.json`'u ile
 aynidir (`parcel_lines`, `frame_lines`, `buildings`, `labels`, `north`),
@@ -108,7 +108,7 @@ def main(argv=None):
     parser.add_argument("--capakey")
     parser.add_argument("--x", type=float)
     parser.add_argument("--y", type=float)
-    parser.add_argument("--margin", type=float, default=30.0)
+    parser.add_argument("--margin", type=float, default=80.0)
     parser.add_argument("--output-dir", type=Path, default=Path("output"))
     parser.add_argument("--labels", action=argparse.BooleanOptionalAction, default=True)
     args = parser.parse_args(argv)

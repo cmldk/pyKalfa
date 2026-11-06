@@ -102,7 +102,7 @@ parcel's cadastral attributes.
      **CaPaKey** (e.g. `92053D0515/00B002`)
    - pick one of the candidates found (you are asked again if none is
      found)
-   - enter **how many metres** around the parcel to include (default 30,
+   - enter **how many metres** around the parcel to include (default 80,
      maximum 200)
    - the **same style choices** as Parsel/Bina Aktar: parcel lines, frame
      (or *"Cerceve cizme"*), building Filled Region Type, parcel number

@@ -33,7 +33,7 @@ logger = script.get_logger()
 FEATURE = "parsel_gis"
 NO_FRAME_LABEL = "-- Cerceve cizme --"
 NO_NORTH_LABEL = "-- Kuzey oku ekleme --"
-DEFAULT_MARGIN_M = "30"
+DEFAULT_MARGIN_M = "80"
 MAX_MARGIN_M = 200.0
 PRECISION_LABELS = {
     "house": u"bina",
@@ -150,7 +150,7 @@ def ask_margin():
     while True:
         text = forms.ask_for_string(
             default=DEFAULT_MARGIN_M,
-            prompt="Parselin etrafinda kac metre alinsin? (ör. 30)",
+            prompt="Parselin etrafinda kac metre alinsin? (ör. 80)",
             title="Alan",
         )
         if not text:

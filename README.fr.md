@@ -111,7 +111,7 @@ attributs cadastraux de la parcelle.
      un **CaPaKey** (p. ex. `92053D0515/00B002`)
    - choisissez l'un des résultats (la question est reposée si rien n'est
      trouvé)
-   - indiquez **combien de mètres** autour de la parcelle inclure (30 par
+   - indiquez **combien de mètres** autour de la parcelle inclure (80 par
      défaut, 200 au maximum)
    - les **mêmes choix de styles** que Parsel/Bina Aktar : lignes de
      parcelles, cadre (ou *« Cerceve cizme »*), Filled Region Type des

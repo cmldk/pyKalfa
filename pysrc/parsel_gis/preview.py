@@ -54,8 +54,11 @@ def render(data):
         cv2.line(canvas, px(p1), px(p2), PARCEL_COLOR, LINE_THICKNESS)
 
     for label in data.get("labels") or []:
+        # Revit'teki gibi metin noktaya yatay ve dikey ORTALANIR
         x, y = px(label["position_ft"])
-        cv2.putText(canvas, label.get("text") or "", (x - 15, y), cv2.FONT_HERSHEY_SIMPLEX,
+        text = label.get("text") or ""
+        (tw, th), _ = cv2.getTextSize(text, cv2.FONT_HERSHEY_SIMPLEX, 0.45, 1)
+        cv2.putText(canvas, text, (x - tw // 2, y + th // 2), cv2.FONT_HERSHEY_SIMPLEX,
                     0.45, LABEL_COLOR, 1, cv2.LINE_AA)
 
     north = data.get("north")

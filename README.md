@@ -102,7 +102,7 @@ parsel numaraları parselin kadastro özniteliklerinden gelir.
    - **adres** (ör. `Rue du Parc 4, 4577 Modave`) veya **CaPaKey**
      (ör. `92053D0515/00B002`) yazın
    - bulunan adaylardan birini seçin (bulunamazsa tekrar sorulur)
-   - parselin etrafında **kaç metre** alınacağını yazın (varsayılan 30,
+   - parselin etrafında **kaç metre** alınacağını yazın (varsayılan 80,
      en fazla 200)
    - Parsel/Bina Aktar'daki **aynı stil seçimleri**: parsel çizgileri,
      çerçeve (veya *"Cerceve cizme"*), bina Filled Region Type, parsel
