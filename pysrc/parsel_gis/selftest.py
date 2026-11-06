@@ -11,10 +11,12 @@ Kullanim:
 
 from __future__ import annotations
 
+import math
 import sys
 import traceback
 
 import gis_http
+import layout
 import services
 
 
@@ -123,6 +125,59 @@ def test_error_json_raises():
         assert False, "UpstreamError bekleniyordu"
     except gis_http.UpstreamError:
         pass
+
+
+# --- Task 2: geometri ---------------------------------------------------------
+
+FT = 1 / 0.3048
+
+
+def _len_m(segs):
+    return sum(math.dist(*s) for s in segs) * 0.3048
+
+
+def test_frame_box_and_origin():
+    sq = {"rings": [[[100, 100], [120, 100], [120, 130], [100, 130], [100, 100]]]}
+    box = layout.frame_box(sq["rings"], 30)
+    assert box == (70, 70, 150, 160), box
+    assert layout.to_local_ft(70, 70, box) == [0.0, 0.0]
+    assert layout.frame_lines(box)[0] == [[0.0, 0.0], [round(80 * FT, 3), 0.0]]
+    assert len(layout.frame_lines(box)) == 4
+
+
+def test_shared_edge_drawn_once():
+    a = {"rings": square(0, 0, 10), "attributes": {}}
+    b = {"rings": square(10, 0, 10), "attributes": {}}
+    segs = layout.parcel_segments([a, b], (-5, -5, 25, 15))
+    # 2 kare = 80 m cevre, ortak 10 m kenar tek sayilir
+    assert abs(_len_m(segs) - 70.0) < 0.01, _len_m(segs)
+
+
+def test_segments_clipped_to_frame():
+    big = {"rings": square(0, 0, 100), "attributes": {}}
+    segs = layout.parcel_segments([big], (50, -10, 150, 50))
+    assert all(-1e-6 <= v <= round(100 * FT, 3) + 1e-6 for s in segs for p in s for v in p)
+    # x=100 kenarinin y in [0,50] kismi + y=0 kenarinin x in [50,100] kismi = 100 m
+    assert abs(_len_m(segs) - 100.0) < 0.01, _len_m(segs)
+
+
+def test_building_split_by_frame():
+    u = {"id": 1, "rings": [[[0, 0], [30, 0], [30, 30], [20, 30], [20, 10], [10, 10], [10, 30], [0, 30], [0, 0]]]}
+    regions = layout.building_regions([u], (-5, 15, 35, 40))  # U'nun iki kolu ayri kalir
+    assert len(regions) == 2 and all(len(r["vertices_ft"]) >= 3 for r in regions), regions
+
+
+def test_labels_skip_tiny_and_use_numero():
+    p = {"rings": square(0, 0, 10), "capakey": "X",
+         "attributes": {"RADICAL": "0568", "BIS": "00", "EXPOSANT": "C", "PUISSANCE": "000"}}
+    labels = layout.parcel_labels([p], (-5, -5, 15, 15))
+    assert labels[0]["text"] == "568C" and labels[0]["rotation_deg"] == 0.0
+    assert layout.parcel_labels([p], (8, 8, 30, 30)) == []  # cerceve icinde 4 m2 < 20 m2
+
+
+def test_north_top_right():
+    n = layout.north_record((0, 0, 100, 50))
+    assert n == {"position_ft": [round(95 * FT, 3), round(45 * FT, 3)], "rotation_deg": 0.0}, n
 
 
 # --- Calistirici --------------------------------------------------------------
