@@ -49,6 +49,10 @@ class RefinedWall:
     deviation_cm: float
     support: int
     warnings: list = field(default_factory=list)
+    # Tek yuzu gorulen ic duvar: yuzun `line`'a gore yani (+1 sol normal, -1 sag).
+    # Kalinlik sonradan (bina geneli grup) degisirse `line` bu yuz sabit kalacak
+    # sekilde kaydirilir (bkz. prepare_rolove_input._assign_interior_groups).
+    face_side: float | None = None
 
 
 # --------------------------------------------------------------------------
@@ -323,7 +327,7 @@ def _far_msg(what, offset, rot):
         what, abs(offset) * 100, rot, config.MAX_SHIFT_M * 100, config.MAX_ROT_DEG)
 
 
-def _refine_exterior(center, t, room_sign, xy, z, index, warnings):
+def _refine_exterior(center, t, room_sign, xy, z, index, warnings, info):
     ref = geom2d.offset_seg(center, room_sign * t / 2.0)
     s = config.FACE_SEARCH_M
     idx = _bbox_index(ref, s, index)
@@ -336,12 +340,15 @@ def _refine_exterior(center, t, room_sign, xy, z, index, warnings):
         return _seg_tuple(ref), outward, "varsayildi", 0, ref
     if _too_far(face.offset, face.rot_deg):
         warnings.append(_far_msg("ic yuz", face.offset, face.rot_deg))
+        info["scan_line"] = _line_from(ref, face.point, face.direction)
         return _seg_tuple(ref), outward, "varsayildi", face.count, ref
     return _line_from(ref, face.point, face.direction), outward, "duzeltildi", face.count, ref
 
 
-def _refine_interior(center, t, xy, z, index, warnings):
-    """(line, status, support, measured_thickness)."""
+def _refine_interior(center, t, xy, z, index, warnings, info):
+    """(line, status, support, measured_thickness). `info`: duzeltme
+    reddedildiyse "scan_line" (taramanin gosterdigi eksen); tek yuzde
+    "face_side" (gorulen yuzun eksene gore yani, +1 sol / -1 sag)."""
     s = t / 2.0 + config.FACE_SEARCH_M
     idx = _bbox_index(center, s, index)
     strip = _Strip(center, xy[idx], z[idx], -s, s)
@@ -360,6 +367,7 @@ def _refine_interior(center, t, xy, z, index, warnings):
             rot = max(a.rot_deg, b.rot_deg)
             if _too_far(offset, rot):
                 warnings.append(_far_msg("duvar ekseni", offset, rot))
+                info["scan_line"] = line
                 return _seg_tuple(center), "varsayildi", a.count + b.count, None
             return line, "olculdu", a.count + b.count, gap
         warnings.append("iki yuz uyumsuz ({:.1f} derece, {:.0f} cm): tek yuz kullanildi".format(
@@ -373,8 +381,10 @@ def _refine_interior(center, t, xy, z, index, warnings):
         offset = f.offset - sign * t / 2.0
         if _too_far(offset, f.rot_deg):
             warnings.append(_far_msg("duvar ekseni", offset, f.rot_deg))
+            info["scan_line"] = line
             return _seg_tuple(center), "varsayildi", f.count, None
-        warnings.append("yalniz bir yuz goruldu: kalinlik DXF'ten")
+        warnings.append("yalniz bir yuz goruldu: kalinlik olculemedi")
+        info["face_side"] = sign
         return line, "duzeltildi", f.count, None
     warnings.append("yuzler taramada gorulmedi: DXF konumu kullanildi")
     return _seg_tuple(center), "varsayildi", 0, None
@@ -397,13 +407,14 @@ def refine_floor(walls, rooms_scan, tf, points, level, report_rooms) -> list:
     out = []
     for w in walls:
         warnings = []
+        info = {}
         center = tf.apply_seg(w.center)
         t = w.thickness
         left, right = _probe_sides(center, t, rooms_scan)
         rooms = left | right
         if left and right:
             side = "interior"
-            line, status, support, measured = _refine_interior(center, t, xy, z, index, warnings)
+            line, status, support, measured = _refine_interior(center, t, xy, z, index, warnings, info)
             ref, outward, location = center, None, "center"
         else:
             side, location, measured = "exterior", "interior_face", None
@@ -413,15 +424,16 @@ def refine_floor(walls, rooms_scan, tf, points, level, report_rooms) -> list:
                 room_sign = float(_points_side(center, t, xy, index)) or 1.0
                 warnings.append("yaninda oda yok: ic taraf nokta yogunlugundan secildi")
             line, outward, status, support, ref = _refine_exterior(
-                center, t, room_sign, xy, z, index, warnings)
+                center, t, room_sign, xy, z, index, warnings, info)
         height, height_status = _height(rooms, report_by_name, level)
         group = config.round_dim(measured) if measured is not None else None
         out.append(RefinedWall(
             floor=w.floor, dxf_center=w.center, side=side, location=location, line=line,
             outward=outward, thickness_dxf=t, measured_thickness=measured,
             thickness_group_m=group, height=height, height_status=height_status,
-            status=status, deviation_cm=round(_deviation_cm(ref, line), 2), support=support,
-            warnings=warnings))
+            status=status,
+            deviation_cm=round(_deviation_cm(ref, info.get("scan_line", line)), 2),
+            support=support, warnings=warnings, face_side=info.get("face_side")))
     return out
 
 

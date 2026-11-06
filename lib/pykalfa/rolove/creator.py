@@ -23,11 +23,16 @@ import time
 
 from Autodesk.Revit.DB import (
     BuiltInParameter,
+    FilteredElementCollector,
     Level,
     Line,
     Transaction,
     TransactionGroup,
+    TransactionStatus,
     UV,
+    ViewFamily,
+    ViewFamilyType,
+    ViewPlan,
     Wall,
     WallLocationLine,
     XYZ,
@@ -37,7 +42,7 @@ from pyrevit import script
 
 from pykalfa.revitutils import WarningSwallower, elem_name
 from pykalfa.rolove import ledger as ledger_mod
-from pykalfa.rolove import params, storage
+from pykalfa.rolove import params, storage, wallaxes
 
 logger = script.get_logger()
 
@@ -126,7 +131,6 @@ def _set_bip_or_name(element, bip_names, names, value):
 
 
 def _unique_level_name(doc, name):
-    from Autodesk.Revit.DB import FilteredElementCollector
     taken = set(elem_name(l) for l in FilteredElementCollector(doc).OfClass(Level))
     if name not in taken:
         return name
@@ -152,6 +156,8 @@ class _Ctx(object):
         self.wall_json = {}       # wall id -> JSON
         self.param_names = None
         self.type_cache = {}
+        self.axes = {}            # dis duvar id -> {"axis", "face"} (wallaxes)
+        self.created_sids = []
 
     def plan(self, ids):
         existing = set(uid for uid in self.items.values() if _alive(self.doc, uid))
@@ -160,6 +166,7 @@ class _Ctx(object):
     def remember(self, sid, element):
         storage.tag(element, sid)
         self.items[sid] = element.UniqueId
+        self.created_sids.append(sid)
 
 
 # --------------------------------------------------------------------------
@@ -183,6 +190,25 @@ def _stage_levels(ctx):
             ctx.remember(sid, level)
             ctx.levels[lv["floor"]] = level
             ctx.report.add("created", "level", sid)
+            _plan_view(ctx, level)
+
+
+def _plan_view(ctx, level):
+    """Yeni Level icin kat plani gorunumu (Level.Create gorunum uretmez)."""
+    vft = None
+    for t in FilteredElementCollector(ctx.doc).OfClass(ViewFamilyType):
+        if t.ViewFamily == ViewFamily.FloorPlan:
+            vft = t
+            break
+    if vft is None:
+        ctx.report.warnings.append("Projede Floor Plan gorunum tipi yok: {} icin plan "
+                                   "olusturulmadi".format(elem_name(level)))
+        return
+    try:
+        view = ViewPlan.Create(ctx.doc, vft.Id, level.Id)
+        view.Name = elem_name(level)
+    except Exception as ex:  # noqa: BLE001 - ad cakismasi vb.; gorunum yine de var
+        ctx.report.warnings.append("{} plan gorunumu: {}".format(elem_name(level), ex))
 
 
 def _wall_type_for(ctx, w):
@@ -205,10 +231,11 @@ def _create_wall(ctx, w, level):
     if math.hypot(p2[0] - p1[0], p2[1] - p1[1]) < MIN_CURVE_FT:
         raise ValueError("duvar cok kisa")
     if w["location"] == "interior_face":
-        half = wall_type.Width / 2.0
-        ox, oy = w["outward"][0] * half, w["outward"][1] * half
-        a = _xyz((p1[0] + ox, p1[1] + oy), level.Elevation)
-        b = _xyz((p2[0] + ox, p2[1] + oy), level.Elevation)
+        # Eksen: ic yuz + outward*W/2; kosede komsu dis duvarin ekseniyle
+        # kesistirilmis (wallaxes) -> Revit duvarlari kendiliginden birlestirir.
+        ax = ctx.axes[w["id"]]
+        a = _xyz(ax["axis"][0], level.Elevation)
+        b = _xyz(ax["axis"][1], level.Elevation)
     else:
         a, b = _xyz(p1, level.Elevation), _xyz(p2, level.Elevation)
     wall = Wall.Create(ctx.doc, Line.CreateBound(a, b), wall_type.Id, level.Id,
@@ -222,7 +249,7 @@ def _create_wall(ctx, w, level):
         ctx.doc.Regenerate()
         curve = wall.Location.Curve
         ends = [curve.GetEndPoint(0), curve.GetEndPoint(1)]
-        want = [_xyz(p1, level.Elevation), _xyz(p2, level.Elevation)]
+        want = [_xyz(p, level.Elevation) for p in ctx.axes[w["id"]]["face"]]
         err = max(min(e.DistanceTo(want[0]), e.DistanceTo(want[1])) for e in ends)
         if err > LINE_CHECK_FT:
             ctx.report.warnings.append(
@@ -236,6 +263,10 @@ def _create_wall(ctx, w, level):
 def _stage_walls(ctx):
     walls = ctx.data.get("walls", [])
     plan = ctx.plan([w["id"] for w in walls])
+    width = ctx.choices.exterior_type.Width
+    for floor in set(w["floor"] for w in walls):
+        ctx.axes.update(wallaxes.exterior_axes(
+            [w for w in walls if w["floor"] == floor], width, LINE_CHECK_FT))
     for w in walls:
         sid = w["id"]
         ctx.wall_json[sid] = w
@@ -393,6 +424,17 @@ def _stage_rooms(ctx):
 
 
 def _stage_ledger(ctx):
+    # Bu calistirmada olusturulup commit sirasinda Revit'in sildigi
+    # elemanlar defterde kalmasin (yoksa sonraki calistirmada "kullanici
+    # silmis" sayilip bir daha hic olusturulmazlar).
+    for sid in ctx.created_sids:
+        if not _alive(ctx.doc, ctx.items.get(sid)):
+            ctx.items.pop(sid, None)
+            for entry in ctx.report.created:
+                if entry["id"] == sid:
+                    ctx.report.created.remove(entry)
+                    ctx.report.add("failed", entry["kind"], sid, "Revit commit sirasinda sildi")
+                    break
     key = (ctx.data.get("source") or {}).get("key")
     if key and key not in ctx.ledger["sources"]:
         ctx.ledger["sources"].append(key)
@@ -420,7 +462,10 @@ def create_all(doc, app, data, choices):
             t.Start()
             try:
                 fn()
-                t.Commit()
+                status = t.Commit()
+                if status != TransactionStatus.Committed:
+                    raise RuntimeError("'{}' asamasi Revit tarafindan geri alindi ({})".format(
+                        name, status))
             except Exception:
                 if t.HasStarted() and not t.HasEnded():
                     t.RollBack()

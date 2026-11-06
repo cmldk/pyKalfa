@@ -74,7 +74,8 @@ def _summary_text(data, plan):
     groups = data.get("thickness_groups") or []
     if groups:
         lines.append("Ic duvar kalinlik gruplari: " + ", ".join(
-            "{} cm x{}".format(g["cm"], g["count"]) for g in groups))
+            "{} cm x{} ({} olculen)".format(g["cm"], g["count"], g.get("measured", 0))
+            for g in groups))
     if plan:
         lines.append("")
         lines.append("Bu projede: olusturulacak {}, korunacak {}, kullanicinin sildigi {} "
@@ -151,7 +152,8 @@ def pick_choices(doc, data):
     group_types = {}
     for g in data.get("thickness_groups") or []:
         group_types[g["cm"]] = pick_by_name(
-            types, "Ic duvar ~{} cm ({} duvar)".format(g["cm"], g["count"]),
+            types, "Ic duvar ~{} cm ({} duvar, {} tanesi taramadan olculdu)".format(
+                g["cm"], g["count"], g.get("measured", 0)),
             "Projede tanimli bir Wall Type bulunamadi.", label_fn=_wall_label)
     kinds = Counter(o["kind"] for o in data.get("openings", []))
     door = window = None
@@ -166,6 +168,12 @@ def pick_choices(doc, data):
             "Pencere ailesi ({} pencere)".format(kinds["window"]),
             "", skip_label="Opening kullan", label_fn=_symbol_label)
     return Choices(exterior, group_types, door, window)
+
+
+def _status_text(status):
+    if isinstance(status, dict):
+        return ", ".join("{} {}".format(k, v) for k, v in sorted(status.items()))
+    return status or ""
 
 
 def show_report(report, data, output):
@@ -187,6 +195,14 @@ def show_report(report, data, output):
             table_data=[[r.get("kind"), r.get("floor"), r.get("id", ""), r.get("reason")]
                         for r in rejected],
             columns=["Tur", "Kat", "Kimlik", "Neden"])
+    element_warnings = [[x.get("kind", "wall"), x["floor"], x["id"], _status_text(x.get("status")),
+                         "; ".join(x["warnings"])]
+                        for k in ("walls", "openings") for x in data.get(k, [])
+                        if x.get("warnings")]
+    if element_warnings:
+        output.print_md("### Eleman uyarilari (taramayla dogrulanamayanlar)")
+        output.print_table(table_data=element_warnings,
+                           columns=["Tur", "Kat", "Kimlik", "Durum", "Uyari"])
     warnings = list(report.warnings) + list(data.get("warnings") or [])
     if warnings:
         output.print_md("### Uyarilar")

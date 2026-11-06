@@ -196,6 +196,28 @@ def _align_all(floors, fp, pts, levels_by_floor):
     return result
 
 
+def assign_interior_groups(walls_by_floor):
+    """Spec: olculemeyen ic duvarin kalinligi bina genelinde EN KALABALIK
+    OLCULEN grubun tipinden. Tek yuzu gorulen duvarda gorulen yuz yerinde
+    kalir, eksen kalinlik farki kadar kayar; hic yuz gorulmeyende DXF ekseni
+    kalir. Olculen grup yoksa hicbir sey degismez. Doner: grup (m) | None."""
+    import geom2d
+    counts = Counter(w.thickness_group_m for ws in walls_by_floor for w in ws
+                     if w.location == "center" and w.measured_thickness is not None)
+    if not counts:
+        return None
+    group = max(counts.items(), key=lambda kv: (kv[1], kv[0]))[0]
+    for ws in walls_by_floor:
+        for w in ws:
+            if w.location != "center" or w.measured_thickness is not None:
+                continue
+            if w.face_side is not None:
+                w.line = tuple(geom2d.offset_seg(
+                    w.line, w.face_side * (w.thickness_dxf - group) / 2.0))
+            w.thickness_group_m = group
+    return group
+
+
 def prepare(found, missing, out_dir: Path):
     """(json sozlugu, cikis kodu)."""
     import align  # noqa: F401  (erken import hatasi icin)
@@ -254,8 +276,9 @@ def prepare(found, missing, out_dir: Path):
 
     wall_ids, op_ids, room_ids = set(), set(), set()
     per_floor = {}
+    refined = {}
     for k, f in enumerate(floors):
-        _progress(55 + int(30 * k / max(len(floors), 1)), "Kat {} duvarlari".format(f))
+        _progress(55 + int(20 * k / max(len(floors), 1)), "Kat {} duvarlari".format(f))
         a = aligns[f]
         tr = a.transform
         doc["alignment"].append({
@@ -274,6 +297,13 @@ def prepare(found, missing, out_dir: Path):
                       for r in layer.rooms]
         report_rooms = [r for (rf, _n), r in report.rooms.items() if rf == f]
         walls = refine.refine_floor(layer.walls, rooms_scan, tr, pts, lv[f], report_rooms)
+        refined[f] = (walls, rooms_scan, report_rooms, tr)
+
+    assign_interior_groups([v[0] for v in refined.values()])
+
+    for f, (walls, rooms_scan, report_rooms, tr) in refined.items():
+        _progress(78, "Kat {} kose ve aciklik".format(f))
+        layer = fp.floors[f]
         refine.join_corners(walls, config.CORNER_SNAP_M)
         ops, rejected = openings_mod.place_openings(layer.openings, walls, tr, rooms_scan,
                                                     report_rooms)
@@ -332,7 +362,10 @@ def prepare(found, missing, out_dir: Path):
 
     groups = Counter(w["thickness_group_cm"] for w in doc["walls"]
                      if w["thickness_group_cm"] is not None)
-    doc["thickness_groups"] = [{"cm": cm, "count": n} for cm, n in sorted(groups.items())]
+    measured_groups = Counter(w["thickness_group_cm"] for w in doc["walls"]
+                              if w["measured_thickness_cm"] is not None)
+    doc["thickness_groups"] = [{"cm": cm, "count": n, "measured": measured_groups.get(cm, 0)}
+                               for cm, n in sorted(groups.items())]
 
     _progress(88, "Onizlemeler ciziliyor")
     for f, (walls, ops, rooms_scan) in per_floor.items():

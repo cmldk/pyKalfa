@@ -442,6 +442,8 @@ def test_large_shift_not_applied(tmp):
           (w.side, w.status, w.warnings))
     check(approx(w.line[0][0], -0.25, 0.005), w.line)       # DXF ic yuzu korunur
     check(w.outward is not None and w.outward[0] < -0.99, w.outward)   # disari = -x
+    # Sapma, uygulanmasa da taramanin gosterdigi kaymadir (0 degil).
+    check(approx(w.deviation_cm, 25.0, 1.0), w.deviation_cm)
 
 
 @test("refine")
@@ -633,6 +635,34 @@ def test_stable_id_uses_rounded_dxf_coords(tmp):
 
 
 @test("prepare")
+def test_unmeasured_interior_walls_take_most_common_measured_group(tmp):
+    import prepare_rolove_input as pri
+
+    def iw(line, measured=None, status="olculdu", face_side=None):
+        w = _rw(line)
+        w.measured_thickness = measured
+        w.thickness_group_m = None if measured is None else 0.15
+        w.status, w.face_side = status, face_side
+        return w
+
+    measured = [iw(((0, y), (4, y)), 0.15) for y in (0.0, 1.0)]
+    one_face = iw(((0, 5.0), (4, 5.0)), status="duzeltildi", face_side=1.0)  # yuz y=5.05
+    unseen = iw(((0, 7.0), (4, 7.0)), status="varsayildi")
+    ext = _rw(((0, 9.0), (4, 9.0)), side="exterior")
+    ext.location = "interior_face"
+    g = pri.assign_interior_groups([measured + [one_face, unseen, ext]])
+    check(g == 0.15, g)
+    check(one_face.thickness_group_m == 0.15 and unseen.thickness_group_m == 0.15,
+          (one_face.thickness_group_m, unseen.thickness_group_m))
+    # gorulen yuz (y = 5.0 + 0.10/2 = 5.05) yerinde kalir: yeni eksen 5.05 - 0.15/2
+    check(approx(one_face.line[0][1], 4.975, 1e-9) and approx(one_face.line[1][1], 4.975, 1e-9),
+          one_face.line)
+    check(unseen.line == ((0, 7.0), (4, 7.0)), unseen.line)              # DXF ekseni kalir
+    check(ext.thickness_group_m is None, ext.thickness_group_m)
+    check(pri.assign_interior_groups([[one_face]]) is None)             # olculen yoksa dokunma
+
+
+@test("prepare")
 def test_prepare_missing_inputs(tmp):
     s = fixtures.synthetic_building(tmp, write_files=True)
     s["paths"]["glb"].unlink()
@@ -696,6 +726,34 @@ def test_plan_actions_respects_deleted(tmp):
     ledger = _ledger()
     r = ledger.plan_actions(["a", "b", "c"], {"a": "u1", "b": "u2"}, {"u1"})
     check(r == {"create": ["c"], "keep": ["a"], "deleted": ["b"]}, r)
+
+
+def _xw(sid, a, b, outward):
+    return {"id": sid, "location": "interior_face", "start_ft": list(a), "end_ft": list(b),
+            "outward": list(outward)}
+
+
+@test("ledger")
+def test_exterior_axes_meet_at_corners(tmp):
+    _ledger()
+    import wallaxes
+    # Dis bukey kose: ic yuzler (5,0)'da bulusur; W = 1 ft.
+    walls = [_xw("a", (0, 0), (5, 0), (0, -1)), _xw("b", (5, 0), (5, 4), (1, 0)),
+             {"id": "i", "location": "center", "start_ft": [2, 0], "end_ft": [2, 4],
+              "outward": None}]
+    ax = wallaxes.exterior_axes(walls, 1.0, 0.01)
+    check(ax["a"]["axis"][1] == (5.5, -0.5) and ax["b"]["axis"][0] == (5.5, -0.5), ax)
+    check(ax["a"]["axis"][0] == (0.0, -0.5), ax["a"])            # serbest uc: duz ofset
+    check(ax["a"]["face"][1] == (5.5, 0.0) and ax["b"]["face"][0] == (5.0, -0.5), ax)
+    check("i" not in ax, ax)
+    # Ic bukey (reflex) kose: (0,0)->(5,0) disari -y, (5,0)->(5,-4) disari +x
+    r = wallaxes.exterior_axes([_xw("c", (0, 0), (5, 0), (0, -1)),
+                                _xw("d", (5, 0), (5, -4), (1, 0))], 1.0, 0.01)
+    check(r["c"]["axis"][1] == (5.5, -0.5) and r["d"]["axis"][0] == (5.5, -0.5), r)
+    # Ayni dogrultuda devam eden iki duvar: dokunulmaz
+    s = wallaxes.exterior_axes([_xw("e", (0, 0), (5, 0), (0, -1)),
+                                _xw("f", (5, 0), (9, 0), (0, -1))], 1.0, 0.01)
+    check(s["e"]["axis"][1] == (5.0, -0.5) and s["f"]["axis"][0] == (5.0, -0.5), s)
 
 
 @test("ledger")
