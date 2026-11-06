@@ -568,6 +568,118 @@ def test_label_point_inside_concave(tmp):
 
 
 # --------------------------------------------------------------------------
+# prepare (CLI uctan uca)
+# --------------------------------------------------------------------------
+
+def run_cli(args):
+    import subprocess
+    proc = subprocess.run([sys.executable, str(HERE / "prepare_rolove_input.py")] + list(args),
+                          capture_output=True, text=True, encoding="utf-8", errors="replace")
+    run_cli.last = proc
+    return proc.returncode
+
+
+def _load_json(path):
+    import json
+    return json.loads(Path(path).read_text("utf-8"))
+
+
+def _ids(j):
+    return {k: sorted(x["id"] for x in j[k]) for k in ("levels", "walls", "openings", "rooms")}
+
+
+@test("prepare")
+def test_prepare_end_to_end_synthetic(tmp):
+    s = fixtures.synthetic_building(tmp, write_files=True)
+    code = run_cli(["--input", str(tmp / "p.dxf"), "--output-dir", str(tmp / "out")])
+    check(code == 0, (code, run_cli.last.stderr[-800:]))
+    check("PROGRESS|100|" in run_cli.last.stdout, run_cli.last.stdout[-300:])
+    j = _load_json(tmp / "out" / "rolove_input.json")
+    check(j["schema_version"] == 1 and len(j["levels"]) == 2, j.get("levels"))
+    check(all(a["ok"] for a in j["alignment"]), j["alignment"])
+    check(j["walls"] and j["openings"] and j["rooms"], j["stats"]["counts"])
+    check(j["z_datum"]["floor"] == s["main_floor"], j["z_datum"])
+    lv = {x["floor"]: x for x in j["levels"]}
+    check(lv[2]["elevation_m"] == 0.0 and lv[1]["elevation_m"] == -2.80, lv)
+    check(approx(lv[1]["elevation_ft"], -2.80 / 0.3048, 1e-6), lv[1])
+    check(len({w["id"] for w in j["walls"]}) == len(j["walls"]) == 10, len(j["walls"]))
+    ids = {w["id"] for w in j["walls"]}
+    check(all(o["host_id"] in ids for o in j["openings"]), j["openings"])
+    kinds = sorted(o["kind"] for o in j["openings"])
+    check(kinds == ["door", "door", "window", "window"], kinds)
+    inner = [w for w in j["walls"] if w["floor"] == 1 and w["side"] == "interior"]
+    check(len(inner) == 1 and inner[0]["thickness_group_cm"] == 20, inner)
+    check(any(g["cm"] == 20 for g in j["thickness_groups"]), j["thickness_groups"])
+    check(j["missing"] == [] and all(Path(p).exists() for p in j["previews"]), j["previews"])
+    check(set(j["source"]["files"]) == {"dxf", "csv", "laz", "glb"}, j["source"])
+
+
+@test("prepare")
+def test_stable_ids_repeatable(tmp):
+    fixtures.synthetic_building(tmp, write_files=True)
+    check(run_cli(["--input", str(tmp / "p.dxf"), "--output-dir", str(tmp / "o1")]) == 0)
+    check(run_cli(["--input", str(tmp / "p.dxf"), "--output-dir", str(tmp / "o2")]) == 0)
+    a, b = _load_json(tmp / "o1" / "rolove_input.json"), _load_json(tmp / "o2" / "rolove_input.json")
+    check(_ids(a) == _ids(b), (_ids(a), _ids(b)))
+
+
+@test("prepare")
+def test_stable_id_uses_rounded_dxf_coords(tmp):
+    import prepare_rolove_input as pri
+    a = pri.stable_id("wall", 2, [(10.001, 5.0), (16.0, 5.0)])
+    b = pri.stable_id("wall", 2, [(16.0, 5.0), (10.004, 5.0)])
+    check(a == b and len(a) == 12, (a, b))
+    check(a != pri.stable_id("wall", 3, [(10.0, 5.0), (16.0, 5.0)]))
+
+
+@test("prepare")
+def test_prepare_missing_inputs(tmp):
+    s = fixtures.synthetic_building(tmp, write_files=True)
+    s["paths"]["glb"].unlink()
+    code = run_cli(["--input", str(tmp / "p.dxf"), "--output-dir", str(tmp / "out")])
+    check(code == 2, (code, run_cli.last.stderr[-500:]))
+    j = _load_json(tmp / "out" / "rolove_input.json")
+    check(len(j["missing"]) == 1 and j["missing"][0]["file"] == "glb", j["missing"])
+    check(j["missing"][0]["polycam_export"], j["missing"])
+    check(j["walls"] == [] and j["levels"] == [], j["stats"])
+
+
+@test("prepare")
+def test_prepare_skips_unaligned_floor(tmp):
+    s = fixtures.synthetic_building(tmp, write_files=True)
+    pts = s["points"][s["points"][:, 2] < 2.7]                # Kat 2 taranmamis
+    fixtures.write_laz(s["paths"]["laz"], pts)
+    code = run_cli(["--input", str(tmp / "p.dxf"), "--output-dir", str(tmp / "out")])
+    check(code == 0, (code, run_cli.last.stderr[-800:]))
+    j = _load_json(tmp / "out" / "rolove_input.json")
+    al = {a["floor"]: a for a in j["alignment"]}
+    check(al[1]["ok"] and not al[2]["ok"] and al[2]["reason"], al)
+    check({w["floor"] for w in j["walls"]} == {1}, {w["floor"] for w in j["walls"]})
+    check({r["floor"] for r in j["rooms"]} == {1} and {o["floor"] for o in j["openings"]} == {1})
+    check(any(r["kind"] == "floor" and r["floor"] == 2 for r in j["rejected"]), j["rejected"])
+
+
+@test("prepare")
+def test_find_inputs_from_zip_ignores_georef(tmp):
+    import zipfile
+    import prepare_rolove_input as pri
+    s = fixtures.synthetic_building(tmp, write_files=True)
+    src = tmp / "src"
+    src.mkdir()
+    with zipfile.ZipFile(src / "p (1).zip", "w") as z:
+        z.write(s["paths"]["dxf"], "p.dxf")
+        z.write(s["paths"]["csv"], "p.csv")
+    s["paths"]["glb"].rename(src / "p.glb")
+    s["paths"]["laz"].rename(src / "p georef.laz")
+    found, missing = pri.find_inputs(src / "p (1).zip", tmp / "out")
+    check(set(found) == {"dxf", "csv", "glb"}, found)
+    check(found["dxf"].parent == tmp / "out" / "rolove_src", found["dxf"])
+    check(found["glb"] == src / "p.glb", found["glb"])
+    check([m["file"] for m in missing] == ["laz"] and "georef" in missing[0]["polycam_export"],
+          missing)
+
+
+# --------------------------------------------------------------------------
 
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser()

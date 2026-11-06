@@ -277,11 +277,30 @@ SYN_ROOMS = {
 }
 
 
+# Ic duvarda bir kapi, alt dis duvarda bir pencere (DXF ekseni uzerinde).
+SYN_DOORS = [((3.04, 2.0), 0.80, (0.0, 1.0))]
+SYN_WINDOWS = [((1.5, -0.05), 1.20, (1.0, 0.0))]
+# CSV: Kat 2'nin yasanabilir alani daha buyuk -> ana kat (Z datum) = Kat 2.
+SYN_CSV_ROWS = [
+    ("Floor 1", "Entire Floor", "Total livable floor area [m^2]", "22.0"),
+    ("Floor 2", "Entire Floor", "Total livable floor area [m^2]", "23.2"),
+    ("Floor 1", "Room A", "Ceiling height [m]", "2.5 "),
+    ("Floor 1", "Room A", "Door dimensions [m]", "0.8 x 2.1"),
+    ("Floor 1", "Room A", "Window dimensions [m]", "1.2 x 1.4"),
+    ("Floor 1", "Room A", "Floor area [m^2]", "11.6"),
+    ("Floor 1", "Room B", "Ceiling height [m]", "2.5 "),
+    ("Floor 2", "Bedroom 2", "Ceiling height [m]", "0.7 - 2.4 "),
+    ("Floor 2", "Room B2", "Ceiling height [m]", "2.5 "),
+    ("All", "Settings", "Wall thickness [m] (total wall length: 40.0)", "0.100"),
+]
+SYN_MAIN_FLOOR = 2
+
+
 def synthetic_dxf_floors():
     floors = {}
     for f, rooms in SYN_ROOMS.items():
-        floors[f] = {"walls": list(SYN_WALLS), "doors": [], "windows": [], "openings": [],
-                     "rooms": rooms}
+        floors[f] = {"walls": list(SYN_WALLS), "doors": list(SYN_DOORS),
+                     "windows": list(SYN_WINDOWS), "openings": [], "rooms": rooms}
     return floors
 
 
@@ -320,11 +339,14 @@ def synthetic_building(tmp, write_files=False, seed=0):
     points = np.vstack(pts).astype(np.float32)
     result = {"points": points, "stories": stories, "floors": floors, "paths": {},
               "dxf_offset": SYN_DXF_OFFSET, "dxf_floors": synthetic_dxf_floors(),
-              "rooms_scan": {f: list(SYN_ROOMS[f]) for f in SYN_ROOMS}}
+              "rooms_scan": {f: list(SYN_ROOMS[f]) for f in SYN_ROOMS},
+              "main_floor": SYN_MAIN_FLOOR}
     if write_files:
         tmp = Path(tmp)
-        result["paths"]["glb"] = tmp / "p.glb"
-        result["paths"]["laz"] = tmp / "p.laz"
+        for key in ("dxf", "csv", "laz", "glb"):
+            result["paths"][key] = tmp / "p.{}".format(key)
         write_story_glb(result["paths"]["glb"], stories)
         write_laz(result["paths"]["laz"], points)
+        write_polycam_dxf(result["paths"]["dxf"], synthetic_dxf_floors(), SYN_DXF_OFFSET)
+        write_polycam_csv(result["paths"]["csv"], SYN_CSV_ROWS)
     return result
