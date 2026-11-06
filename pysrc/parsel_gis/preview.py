@@ -68,7 +68,7 @@ def render(data):
         text = label.get("text") or ""
         (tw, th), _ = cv2.getTextSize(text, cv2.FONT_HERSHEY_SIMPLEX, 0.45, 1)
         cv2.putText(canvas, text, (x - tw // 2, y + th // 2), cv2.FONT_HERSHEY_SIMPLEX,
-                    0.45, SELECTED_COLOR if label.get("selected") else LABEL_COLOR, 1, cv2.LINE_AA)
+                    0.45, LABEL_COLOR, 1, cv2.LINE_AA)
 
     # Sokak adlari: onizlemede dondurulmez, yalniz noktaya ortalanir
     for street in data.get("street_labels") or []:

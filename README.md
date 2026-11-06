@@ -104,8 +104,8 @@ parsel numaraları parselin kadastro özniteliklerinden gelir.
    - bulunan adaylardan birini seçin (bulunamazsa tekrar sorulur)
    - parselin etrafında **kaç metre** alınacağını yazın (varsayılan 80,
      en fazla 200)
-   - **seçilen parselin sınırı** ve **numarası** için ayrı line style ve
-     Text Note Type (atlanırsa diğer parsellerle aynı stil kullanılır)
+   - **seçilen parselin dış sınırı** için ayrı line style (atlanırsa diğer
+     parsellerle aynı stil kullanılır; numarası diğerleriyle aynı yazılır)
    - Parsel/Bina Aktar'daki **aynı stil seçimleri**: parsel çizgileri,
      çerçeve (veya *"Cerceve cizme"*), yol ve kaldırım kenarları (veya
      *"Yol cizme"*), sokak adları için Text Note Type (veya *"Sokak adi

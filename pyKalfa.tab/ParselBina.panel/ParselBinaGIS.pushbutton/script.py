@@ -36,7 +36,6 @@ NO_NORTH_LABEL = "-- Kuzey oku ekleme --"
 NO_ROAD_LABEL = "-- Yol cizme --"
 NO_STREET_LABEL = "-- Sokak adi yazma --"
 SAME_LINE_LABEL = "-- Parsel cizgisiyle ayni --"
-SAME_TEXT_LABEL = "-- Parsel etiketiyle ayni --"
 DEFAULT_MARGIN_M = "80"
 MAX_MARGIN_M = 200.0
 PRECISION_LABELS = {
@@ -207,13 +206,6 @@ try:
         title="Parsel etiketleri (ör. '591G') icin text note tipi secin",
         optional=True,
     )
-    chosen_selected_text_type = None
-    if chosen_text_note_type is not None:
-        chosen_selected_text_type = selectors.pick_text_note_type(
-            doc,
-            title=u"Secilen parselin numarasi ({}) icin text note tipi secin".format(location.get("numero")),
-            skip_label=SAME_TEXT_LABEL,
-        )
     chosen_north_symbol = selectors.pick_annotation_symbol(
         doc,
         title="Kuzey oku icin aciklama sembolu (annotation symbol) secin",
@@ -296,7 +288,6 @@ try:
         road_style=chosen_road_style,
         street_text_type=chosen_street_text_type,
         selected_line_style=chosen_selected_line_style,
-        selected_text_type=chosen_selected_text_type,
     )
 except Exception as ex:
     forms.alert("Islem geri alindi, hata olustu:\n{}\n\n{}".format(ex, traceback.format_exc()))
@@ -323,10 +314,6 @@ if chosen_road_style is not None:
 summary += u"Bina blogu (filled region): {} olusturuldu, {} atlandi\n".format(
     counts["regions"], counts["regions_skipped"])
 summary += u"Parsel etiketi (text): {} olusturuldu, {} atlandi".format(counts["labels"], counts["labels_skipped"])
-if chosen_text_note_type is not None:
-    summary += u"\nSecilen parsel numarasi: {}".format(
-        (u"ayri tiple yazildi" if chosen_selected_text_type is not None else u"parsel tipiyle yazildi")
-        if counts["selected_label"] else u"yazilamadi (parsel cerceve icinde cok kucuk olabilir)")
 if chosen_street_text_type is not None:
     summary += u"\nSokak adi (text): {} olusturuldu, {} atlandi".format(counts["streets"], counts["streets_skipped"])
 if chosen_north_symbol is not None:
