@@ -68,6 +68,15 @@ SIDE_PROBE_FRACTIONS = (0.25, 0.50, 0.75)
 CORNER_SNAP_M = 0.15          # uclari bu mesafede olan duvarlar birlestirilir
 DEFAULT_WALL_HEIGHT_M = 2.50
 
+# --- Aciklik (openings.py) ------------------------------------------------
+HOST_TOL_M = 0.05             # aciklik merkezi, duvar ekseninden en cok t/2 + bu
+CSV_WIDTH_TOL_M = 0.10        # CSV kaydi bu genislik farkinda eslesir
+OPENING_PROBE_M = 0.20        # komsu oda yoklamasi: yuzun bu kadar otesi
+DEFAULT_DOOR_HEIGHT_M = 2.10
+DEFAULT_WINDOW_HEIGHT_M = 1.20
+DEFAULT_WINDOW_SILL_M = 0.90
+DEFAULT_OPENING_HEIGHT_M = 2.10
+
 
 def _round_step(value, step):
     return round(math.floor(value / step + 0.5) * step, 6)

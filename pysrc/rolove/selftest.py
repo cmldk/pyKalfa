@@ -478,6 +478,96 @@ def test_join_corners_t_junction_and_far(tmp):
 
 
 # --------------------------------------------------------------------------
+# openings
+# --------------------------------------------------------------------------
+# Tek dis duvar: DXF ekseni y=-0.05 (x 0..6, t 0.10) -> taramada ic yuzu y=0.02
+# (7 cm duzeltilmis); oda y>0 tarafinda. DXF->tarama donusumu: +10/+5 oteleme.
+
+_OP_TF = (0.0, False, -10.0, -5.0)
+L_SHAPE = [(0, 0), (4, 0), (4, 1), (1, 1), (1, 4), (0, 4)]
+
+
+def _op_wall(height=2.50):
+    w = _rw(((0.0, 0.02), (6.0, 0.02)), side="exterior")
+    w.dxf_center = ((10.0, 4.95), (16.0, 4.95))
+    w.location, w.outward, w.height = "interior_face", (0.0, -1.0), height
+    return w
+
+
+def _op(kind, width, center=(13.0, 4.95)):
+    import polycam_dxf
+    return polycam_dxf.DxfOpening(2, kind, center, width, (1.0, 0.0))
+
+
+def _place(ops, csv_doors=(), csv_windows=(), wall_height=2.50):
+    import openings
+    import polycam_csv
+    import polycam_dxf
+    from align import Transform2D
+    rooms = [polycam_dxf.DxfRoom(2, "Room", [(0, 0), (6, 0), (6, 4), (0, 4)])]
+    report = [polycam_csv.RoomReport(2, "Room", doors=list(csv_doors),
+                                     windows=list(csv_windows))]
+    return openings.place_openings(ops, [_op_wall(wall_height)], Transform2D(*_OP_TF),
+                                   rooms, report)
+
+
+@test("openings")
+def test_door_height_from_csv(tmp):
+    out, rejected = _place([_op("door", 0.80)], csv_doors=[(0.8, 2.1), (2.9, 2.4)])
+    o = out[0]
+    check(rejected == [] and o.host == 0, rejected)
+    check(o.height == 2.10 and o.status["height"] == "olculdu" and o.status["width"] == "olculdu",
+          (o.height, o.status))
+    check(o.width == 0.80 and o.sill == 0.0 and o.status["sill"] == "olculdu", (o.width, o.sill))
+    check(approx(o.offset, 3.0, 1e-6), o.offset)
+
+
+@test("openings")
+def test_window_ambiguous_csv_defaults(tmp):
+    out, _ = _place([_op("window", 1.50)], csv_windows=[(1.5, 1.5), (1.45, 1.3)])
+    o = out[0]
+    check(o.height == 1.20 and o.status["height"] == "varsayildi", (o.height, o.status))
+    check(o.sill == 0.90 and o.status["sill"] == "varsayildi", (o.sill, o.status))
+
+
+@test("openings")
+def test_identical_csv_records_not_ambiguous(tmp):
+    out, _ = _place([_op("door", 0.83)], csv_doors=[(0.8, 2.0), (0.8, 2.0)])
+    check(out[0].height == 2.00 and out[0].status["height"] == "olculdu", out[0])
+    check(out[0].width == 0.85, out[0].width)                 # round_dim(0.83)
+
+
+@test("openings")
+def test_opening_without_host_rejected(tmp):
+    out, rejected = _place([_op("door", 0.9, center=(50.0, 50.0))])
+    check(out == [] and len(rejected) == 1 and rejected[0]["reason"], rejected)
+    check(rejected[0]["kind"] == "door" and rejected[0]["floor"] == 2, rejected)
+
+
+@test("openings")
+def test_opening_wider_than_host_rejected(tmp):
+    out, rejected = _place([_op("opening", 7.0)])
+    check(out == [] and "genis" in rejected[0]["reason"], rejected)
+
+
+@test("openings")
+def test_opening_height_clipped_to_wall(tmp):
+    out, _ = _place([_op("door", 0.9)], csv_doors=[(0.9, 2.3)], wall_height=2.20)
+    o = out[0]
+    check(o.height == 2.20 and o.warnings, (o.height, o.warnings))
+
+
+@test("openings")
+def test_label_point_inside_concave(tmp):
+    import geom2d
+    import openings
+    p = openings.label_point(L_SHAPE)
+    check(geom2d.point_in_polygon(p, L_SHAPE), p)
+    sq = [(0, 0), (2, 0), (2, 2), (0, 2)]
+    check(geom2d.point_in_polygon(openings.label_point(sq), sq))
+
+
+# --------------------------------------------------------------------------
 
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser()
