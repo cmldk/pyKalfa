@@ -35,6 +35,8 @@ NO_FRAME_LABEL = "-- Cerceve cizme --"
 NO_NORTH_LABEL = "-- Kuzey oku ekleme --"
 NO_ROAD_LABEL = "-- Yol cizme --"
 NO_STREET_LABEL = "-- Sokak adi yazma --"
+SAME_LINE_LABEL = "-- Parsel cizgisiyle ayni --"
+SAME_TEXT_LABEL = "-- Parsel etiketiyle ayni --"
 DEFAULT_MARGIN_M = "80"
 MAX_MARGIN_M = 200.0
 PRECISION_LABELS = {
@@ -174,6 +176,12 @@ try:
     chosen_line_style = selectors.pick_line_style(
         doc, title="Parsel çizgileri için line style seçin"
     )
+    # Secilen (aranan) parselin siniri ayri stille; "ayni" secilirse parsel stili.
+    chosen_selected_line_style = selectors.pick_line_style(
+        doc,
+        title=u"Secilen parselin ({}) siniri icin line style secin".format(location.get("numero")),
+        skip_label=SAME_LINE_LABEL,
+    )
     chosen_frame_style = selectors.pick_line_style(
         doc,
         title="Cizim cercevesi (goruntunun dis siniri) icin line style secin",
@@ -199,6 +207,13 @@ try:
         title="Parsel etiketleri (ör. '591G') icin text note tipi secin",
         optional=True,
     )
+    chosen_selected_text_type = None
+    if chosen_text_note_type is not None:
+        chosen_selected_text_type = selectors.pick_text_note_type(
+            doc,
+            title=u"Secilen parselin numarasi ({}) icin text note tipi secin".format(location.get("numero")),
+            skip_label=SAME_TEXT_LABEL,
+        )
     chosen_north_symbol = selectors.pick_annotation_symbol(
         doc,
         title="Kuzey oku icin aciklama sembolu (annotation symbol) secin",
@@ -280,6 +295,8 @@ try:
         "pyKalfa: parsel/bina GIS aktarimi",
         road_style=chosen_road_style,
         street_text_type=chosen_street_text_type,
+        selected_line_style=chosen_selected_line_style,
+        selected_text_type=chosen_selected_text_type,
     )
 except Exception as ex:
     forms.alert("Islem geri alindi, hata olustu:\n{}\n\n{}".format(ex, traceback.format_exc()))
@@ -296,6 +313,9 @@ if address_label:
     summary += u"Adres: {}\n".format(address_label)
 summary += u"Alan: parsel ± {:g} m\n\n".format(margin_m)
 summary += u"Parsel cizgisi: {} olusturuldu, {} atlandi\n".format(counts["lines"], counts["lines_skipped"])
+summary += u"Secilen parsel siniri: {} olusturuldu, {} atlandi{}\n".format(
+    counts["selected_lines"], counts["selected_lines_skipped"],
+    u"" if chosen_selected_line_style is not None else u" (parsel stiliyle)")
 if chosen_frame_style is not None:
     summary += u"Cerceve cizgisi: {} olusturuldu, {} atlandi\n".format(counts["frame"], counts["frame_skipped"])
 if chosen_road_style is not None:
@@ -303,6 +323,10 @@ if chosen_road_style is not None:
 summary += u"Bina blogu (filled region): {} olusturuldu, {} atlandi\n".format(
     counts["regions"], counts["regions_skipped"])
 summary += u"Parsel etiketi (text): {} olusturuldu, {} atlandi".format(counts["labels"], counts["labels_skipped"])
+if chosen_text_note_type is not None:
+    summary += u"\nSecilen parsel numarasi: {}".format(
+        (u"ayri tiple yazildi" if chosen_selected_text_type is not None else u"parsel tipiyle yazildi")
+        if counts["selected_label"] else u"yazilamadi (parsel cerceve icinde cok kucuk olabilir)")
 if chosen_street_text_type is not None:
     summary += u"\nSokak adi (text): {} olusturuldu, {} atlandi".format(counts["streets"], counts["streets_skipped"])
 if chosen_north_symbol is not None:

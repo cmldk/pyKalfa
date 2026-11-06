@@ -82,11 +82,23 @@ def _lines(geom):
             yield from _lines(g)
 
 
-def parcel_segments(parcels, box):
-    """Cerceve icindeki parsel sinirlari; komsu parsellerin ortak kenari tek kez."""
+def parcel_segments(parcels, box, exclude=None):
+    """Cerceve icindeki parsel sinirlari; komsu parsellerin ortak kenari tek kez.
+    `exclude` (secilen parsel) verilirse onun sinirina dusen kisimlar cikarilir:
+    o sinir `selected_parcel_segments` ile ayri stilde cizilir, iki kez degil."""
     if not parcels:
         return []
-    return _segments([rings_to_geom(p["rings"]).boundary for p in parcels], box)
+    lines = [rings_to_geom(p["rings"]).boundary for p in parcels]
+    if exclude is None:
+        return _segments(lines, box)
+    sel = shapely.set_precision(rings_to_geom(exclude["rings"]).boundary, SNAP_M)
+    merged = shapely.unary_union([shapely.set_precision(g, SNAP_M) for g in lines])
+    return _segments([merged.difference(sel.buffer(SNAP_M))], box)
+
+
+def selected_parcel_segments(parcel, box):
+    """Secilen parselin cerceve icindeki siniri (komsularla ortak kenarlar dahil)."""
+    return _segments([rings_to_geom(parcel["rings"]).boundary], box)
 
 
 def road_segments(roads, box):
@@ -142,8 +154,9 @@ def building_regions(buildings, box):
     return out
 
 
-def parcel_labels(parcels, box):
-    """Her parsel icin numara etiketi; cerceve icinde kalan alani kucukse atlanir."""
+def parcel_labels(parcels, box, selected_capakey=None):
+    """Her parsel icin numara etiketi; cerceve icinde kalan alani kucukse atlanir.
+    `selected` = secilen parselin etiketi mi (Revit'te ayri text note tipi)."""
     frame = shapely.box(*box)
     out = []
     for p in parcels:
@@ -155,6 +168,7 @@ def parcel_labels(parcels, box):
             continue
         pt = clipped.representative_point()
         out.append({"id": len(out), "text": text, "capakey": p.get("capakey"),
+                    "selected": bool(selected_capakey) and p.get("capakey") == selected_capakey,
                     "position_ft": to_local_ft(pt.x, pt.y, box), "rotation_deg": 0.0})
     return out
 

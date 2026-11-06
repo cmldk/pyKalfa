@@ -72,9 +72,10 @@ def prepare(capakey, x, y, margin_m, output_dir, labels=True, roads=True, street
     axes = services.street_axes_in_box(box) if streets else []
 
     _progress(85, "Geometri")
-    parcel_lines = layout.parcel_segments(parcels, box)
+    parcel_lines = layout.parcel_segments(parcels, box, exclude=selected)
+    selected_lines = layout.selected_parcel_segments(selected, box)
     regions = layout.building_regions(buildings, box)
-    label_records = layout.parcel_labels(parcels, box) if labels else []
+    label_records = layout.parcel_labels(parcels, box, selected["capakey"]) if labels else []
     road_lines = layout.road_segments(road_items, box)
     street_records = layout.street_labels(axes, box)
 
@@ -90,6 +91,8 @@ def prepare(capakey, x, y, margin_m, output_dir, labels=True, roads=True, street
         "label_count": len(label_records),
         "parcel_line_count": len(parcel_lines),
         "parcel_lines": parcel_lines,
+        "selected_parcel_lines_note": "Secilen parselin siniri (komsularla ortak kenarlar dahil); parcel_lines bu kenarlari icermez. Ayri line style secilmezse parsel stiliyle cizilir.",
+        "selected_parcel_lines": selected_lines,
         "frame_lines": layout.frame_lines(box),
         "north": layout.north_record(box),
         "buildings": regions,

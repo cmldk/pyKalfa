@@ -22,6 +22,7 @@ LINE_THICKNESS = 2
 LABEL_COLOR = (120, 0, 120)      # BGR - mor
 ROAD_COLOR = (150, 150, 150)     # BGR - acik gri
 STREET_COLOR = (60, 60, 60)      # BGR - koyu gri
+SELECTED_COLOR = (0, 0, 220)     # BGR - kirmizi (secilen parsel)
 PX_PER_M = 8.0
 MAX_SIDE_PX = 2000
 
@@ -58,13 +59,16 @@ def render(data):
     for p1, p2 in data.get("parcel_lines") or []:
         cv2.line(canvas, px(p1), px(p2), PARCEL_COLOR, LINE_THICKNESS)
 
+    for p1, p2 in data.get("selected_parcel_lines") or []:
+        cv2.line(canvas, px(p1), px(p2), SELECTED_COLOR, LINE_THICKNESS + 1)
+
     for label in data.get("labels") or []:
         # Revit'teki gibi metin noktaya yatay ve dikey ORTALANIR
         x, y = px(label["position_ft"])
         text = label.get("text") or ""
         (tw, th), _ = cv2.getTextSize(text, cv2.FONT_HERSHEY_SIMPLEX, 0.45, 1)
         cv2.putText(canvas, text, (x - tw // 2, y + th // 2), cv2.FONT_HERSHEY_SIMPLEX,
-                    0.45, LABEL_COLOR, 1, cv2.LINE_AA)
+                    0.45, SELECTED_COLOR if label.get("selected") else LABEL_COLOR, 1, cv2.LINE_AA)
 
     # Sokak adlari: onizlemede dondurulmez, yalniz noktaya ortalanir
     for street in data.get("street_labels") or []:

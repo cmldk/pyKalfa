@@ -127,16 +127,21 @@ def _draw_notes(doc, view, items, text_type, z, what):
 
 def draw_revit_input(doc, view, data, line_style, frame_style, region_type,
                      text_type, north_symbol, transaction_name,
-                     road_style=None, street_text_type=None):
+                     road_style=None, street_text_type=None,
+                     selected_line_style=None, selected_text_type=None):
     """Sayimlari dondurur: lines, lines_skipped, frame, frame_skipped,
     roads, roads_skipped, regions, regions_skipped, labels, labels_skipped,
     streets, streets_skipped, north (0/1).
     `frame_style`, `text_type`, `north_symbol`, `road_style`,
-    `street_text_type` None olabilir (None = o parca cizilmez)."""
+    `street_text_type` None olabilir (None = o parca cizilmez).
+    Secilen parsel: `selected_line_style` / `selected_text_type` None ise
+    parsel stili / parsel text tipiyle cizilir (hicbir sey kaybolmaz);
+    sayimlar selected_lines, selected_lines_skipped, selected_label (0/1)."""
     z = view_elevation(view)
     counts = dict(lines=0, lines_skipped=0, frame=0, frame_skipped=0, roads=0, roads_skipped=0,
                   regions=0, regions_skipped=0, labels=0, labels_skipped=0,
-                  streets=0, streets_skipped=0, north=0)
+                  streets=0, streets_skipped=0, north=0,
+                  selected_lines=0, selected_lines_skipped=0, selected_label=0)
 
     t = Transaction(doc, transaction_name)
     opts = t.GetFailureHandlingOptions()
@@ -146,6 +151,12 @@ def draw_revit_input(doc, view, data, line_style, frame_style, region_type,
     try:
         counts["lines"], counts["lines_skipped"] = _draw_segments(
             doc, view, data.get("parcel_lines") or [], line_style, z, "Parsel")
+
+        # parcel_lines secilen parselin sinirini icermez: o burada, ayri
+        # stil secilmediyse parsel stiliyle cizilir.
+        counts["selected_lines"], counts["selected_lines_skipped"] = _draw_segments(
+            doc, view, data.get("selected_parcel_lines") or [],
+            selected_line_style or line_style, z, "Secilen parsel")
 
         if frame_style is not None:
             counts["frame"], counts["frame_skipped"] = _draw_segments(
@@ -162,8 +173,15 @@ def draw_revit_input(doc, view, data, line_style, frame_style, region_type,
                 counts["regions_skipped"] += 1
 
         if text_type is not None:
+            labels = data.get("labels") or []
             counts["labels"], counts["labels_skipped"] = _draw_notes(
-                doc, view, data.get("labels") or [], text_type, z, "Etiket")
+                doc, view, [l for l in labels if not l.get("selected")], text_type, z, "Etiket")
+            sel_created, sel_skipped = _draw_notes(
+                doc, view, [l for l in labels if l.get("selected")],
+                selected_text_type or text_type, z, "Secilen parsel etiketi")
+            counts["labels"] += sel_created
+            counts["labels_skipped"] += sel_skipped
+            counts["selected_label"] = 1 if sel_created else 0
 
         if street_text_type is not None:
             counts["streets"], counts["streets_skipped"] = _draw_notes(

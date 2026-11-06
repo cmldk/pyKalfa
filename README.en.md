@@ -104,6 +104,9 @@ parcel's cadastral attributes.
      found)
    - enter **how many metres** around the parcel to include (default 80,
      maximum 200)
+   - a separate line style and Text Note Type for the **selected
+     parcel's boundary** and **number** (if skipped, the other parcels' style
+     is used)
    - the **same style choices** as Parsel/Bina Aktar: parcel lines, frame
      (or *"Cerceve cizme"*), road and sidewalk edges (or *"Yol cizme"*),
      Text Note Type for street names (or *"Sokak adi yazma"*), building

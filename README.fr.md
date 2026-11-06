@@ -113,6 +113,9 @@ attributs cadastraux de la parcelle.
      trouvé)
    - indiquez **combien de mètres** autour de la parcelle inclure (80 par
      défaut, 200 au maximum)
+   - un line style et un Text Note Type distincts pour la **limite** et le
+     **numéro de la parcelle choisie** (si ignorés, le style des autres
+     parcelles est utilisé)
    - les **mêmes choix de styles** que Parsel/Bina Aktar : lignes de
      parcelles, cadre (ou *« Cerceve cizme »*), bords de voirie et de
      trottoir (ou *« Yol cizme »*), Text Note Type des noms de rues (ou

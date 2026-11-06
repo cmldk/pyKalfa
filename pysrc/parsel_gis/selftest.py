@@ -214,6 +214,25 @@ def test_building_edges_long_enough_for_revit():
     assert min(edges) >= 0.05, edges
 
 
+def test_selected_parcel_lines_split_from_others():
+    a = {"rings": square(0, 0, 10), "capakey": "SEL", "attributes": {}}
+    b = {"rings": square(10, 0, 10), "capakey": "NB", "attributes": {}}
+    box = (-5, -5, 25, 15)
+    sel = layout.selected_parcel_segments(a, box)
+    others = layout.parcel_segments([a, b], box, exclude=a)
+    # secilen parselin 4 kenari (40 m, komsuyla ortak kenar dahil) ayri;
+    # digerleri yalniz komsunun kalan 3 kenari (30 m) -- ortak kenar iki kez cizilmez
+    assert abs(_len_m(sel) - 40.0) < 0.01, _len_m(sel)
+    assert abs(_len_m(others) - 30.0) < 0.05, _len_m(others)
+
+
+def test_labels_mark_selected_parcel():
+    a = {"rings": square(0, 0, 10), "capakey": "SEL", "attributes": {"RADICAL": "0001", "BIS": "00", "EXPOSANT": "A", "PUISSANCE": "000"}}
+    b = {"rings": square(10, 0, 10), "capakey": "NB", "attributes": {"RADICAL": "0002", "BIS": "00", "EXPOSANT": "A", "PUISSANCE": "000"}}
+    labels = layout.parcel_labels([a, b], (-5, -5, 25, 15), selected_capakey="SEL")
+    assert {l["text"]: l["selected"] for l in labels} == {"1A": True, "2A": False}, labels
+
+
 def test_north_top_right():
     n = layout.north_record((0, 0, 100, 50))
     assert n == {"position_ft": [round(95 * FT, 3), round(45 * FT, 3)], "rotation_deg": 0.0}, n
@@ -249,6 +268,9 @@ def test_prepare_writes_existing_format():
     assert (tmp / "revit_input.json").is_file() and (tmp / "revit_input_preview.png").is_file()
     assert min(v for s in data["frame_lines"] for p in s for v in p) == 0.0
     assert data["building_count"] == 1 and {l["text"] for l in data["labels"]} == {"515B2", "516"}
+    # secilen parselin siniri ayri listede, numarasi isaretli
+    assert abs(_len_m(data["selected_parcel_lines"]) - 80.0) < 0.01, _len_m(data["selected_parcel_lines"])
+    assert {l["text"]: l["selected"] for l in data["labels"]} == {"515B2": True, "516": False}
 
 
 def test_prepare_from_point_uses_20m():
