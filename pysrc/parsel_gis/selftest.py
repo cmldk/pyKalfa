@@ -120,7 +120,33 @@ def test_query_box_paginates():
         {"features": [feature("C", square(20, 0, 10))]},
     ])])
     assert len(services.parcels_in_box((0, 0, 50, 50))) == 3
-    assert fake.calls_to(services.CADMAP_LAYER)[1]["resultOffset"] == 2
+    calls = fake.calls_to(services.CADMAP_LAYER)
+    assert calls[0]["resultOffset"] == 0 and calls[1]["resultOffset"] == 2, calls
+    assert all(c["orderByFields"] == "OBJECTID" for c in calls)
+
+
+def test_query_box_dedupes_by_objectid():
+    # sunucu sayfalar arasinda ayni kaydi tekrar verirse tek sayilmali
+    fake = install([(services.PICC_LAYER, [
+        {"exceededTransferLimit": True, "features": [
+            {"attributes": {"OBJECTID": 1}, "geometry": {"rings": square(0, 0, 5)}},
+            {"attributes": {"OBJECTID": 2}, "geometry": {"rings": square(10, 0, 5)}}]},
+        {"features": [{"attributes": {"OBJECTID": 2}, "geometry": {"rings": square(10, 0, 5)}}]},
+    ])])
+    assert [b["id"] for b in services.buildings_in_box((0, 0, 50, 50))] == [1, 2]
+    install([(services.CADMAP_LAYER, [
+        {"exceededTransferLimit": True, "features": [feature("A", square(0, 0, 10), OBJECTID=1)]},
+        {"features": [feature("A", square(0, 0, 10), OBJECTID=1), feature("B", square(10, 0, 10), OBJECTID=2)]},
+    ])])
+    assert [p["capakey"] for p in services.parcels_in_box((0, 0, 50, 50))] == ["A", "B"]
+    assert "OBJECTID" in services.PARCEL_FIELDS.split(",")
+
+
+def test_suggest_uses_short_timeout():
+    seen = []
+    gis_http.set_transport(lambda url, params, post, timeout: seen.append(timeout) or {"candidates": []})
+    services.suggest("x")
+    assert seen and max(seen) <= 10, seen
 
 
 def test_error_json_raises():
@@ -178,6 +204,14 @@ def test_labels_skip_tiny_and_use_numero():
     labels = layout.parcel_labels([p], (-5, -5, 15, 15))
     assert labels[0]["text"] == "568C" and labels[0]["rotation_deg"] == 0.0
     assert layout.parcel_labels([p], (8, 8, 30, 30)) == []  # cerceve icinde 4 m2 < 20 m2
+
+
+def test_building_edges_long_enough_for_revit():
+    # 0.015 m'lik kenar Revit'te (MIN_SEGMENT_LENGTH_FT = 0.05 ft) atlanir ve loop kopar
+    b = {"id": 1, "rings": [[[0, 0], [10, 0], [10, 10], [5.015, 10], [5, 10], [0, 10], [0, 0]]]}
+    verts = layout.building_regions([b], (-5, -5, 15, 15))[0]["vertices_ft"]
+    edges = [math.dist(verts[i], verts[(i + 1) % len(verts)]) for i in range(len(verts))]
+    assert min(edges) >= 0.05, edges
 
 
 def test_north_top_right():
@@ -262,6 +296,17 @@ def test_suggest_cli_capakey_mode():
     assert c[0]["capakey"] == "92053D0515/00B002" and c[0]["precision"] == "capakey", c
     install([(services.CADMAP_LAYER, {"features": []})])
     assert suggest_cli.main(["--query", "92053D0515/00B002", "--output", str(out)]) == 0
+    assert json.loads(out.read_text(encoding="utf-8"))["candidates"] == []
+
+
+def test_suggest_cli_resolves_point():
+    install(_world())
+    out = _tmp() / "p.json"
+    assert suggest_cli.main(["--x", "200010", "--y", "100010", "--output", str(out)]) == 0
+    c = json.loads(out.read_text(encoding="utf-8"))["candidates"]
+    assert c[0]["capakey"] == "92053D0515/00B002" and c[0]["numero"] == "515B2", c
+    install([(services.CADMAP_LAYER, {"features": []})])
+    assert suggest_cli.main(["--x", "1", "--y", "1", "--output", str(out)]) == 0
     assert json.loads(out.read_text(encoding="utf-8"))["candidates"] == []
 
 

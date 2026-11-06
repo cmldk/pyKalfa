@@ -22,7 +22,9 @@ MIN_LABEL_AREA_M2 = 20.0
 NORTH_INSET_M = 5.0
 SNAP_M = 0.01
 MAX_MARGIN_M = 200.0
-MIN_SEGMENT_M = 0.01
+# Revit tarafi (parsel_draw.MIN_SEGMENT_LENGTH_FT = 0.05 ft = 0.01524 m) bundan
+# kisa kenari atlar ve bina loop'u kopar; bu yuzden esik onun ustunde tutulur.
+MIN_SEGMENT_M = 0.02
 MIN_REGION_AREA_M2 = 0.5
 
 

@@ -19,7 +19,8 @@ CADMAP_LAYER = SPW + "PLAN_REGLEMENT/CADMAP_PARCELLES/MapServer/0"
 PICC_LAYER = SPW + "TOPOGRAPHIE/PICC_VDIFF/MapServer/11"
 CAPAKEY_RE = re.compile(r"^\d{5}[A-Z_]\d{4}/\d{2}[A-Z0-9_]\d{3}$")
 ADDRESS_SEARCH_M = 20
-PARCEL_FIELDS = "CAPAKEY,CAPATY,COMMUNE,NOM_COMMUNE,CODE_DIV,DIV_NOM,SECT,RADICAL,BIS,EXPOSANT,PUISSANCE,VER"
+SUGGEST_TIMEOUT = 10
+PARCEL_FIELDS = "OBJECTID,CAPAKEY,CAPATY,COMMUNE,NOM_COMMUNE,CODE_DIV,DIV_NOM,SECT,RADICAL,BIS,EXPOSANT,PUISSANCE,VER"
 BUILDING_FIELDS = "OBJECTID,NATUR_DESC"
 MAX_PAGES = 10
 _BOUNDS = (0.0, 0.0, 400000.0, 300000.0)
@@ -84,7 +85,7 @@ def suggest(q, limit=5):
     for url, params in ((GEOCODE_WS + "/geocode", {"address": q, "geom": "true"}),
                         (GEOCODE_WS + "/searchAll", {"address": _clean(q), "bbox": "true"})):
         try:
-            results.append(get_json(url, params, retries=0))
+            results.append(get_json(url, params, timeout=SUGGEST_TIMEOUT, retries=0))
         except UpstreamError:
             errors += 1
             results.append({})
@@ -190,11 +191,13 @@ def _query_box(layer, box, fields):
     base = {"geometry": ",".join("{:.2f}".format(v) for v in box), "geometryType": "esriGeometryEnvelope",
             "inSR": 31370, "spatialRel": "esriSpatialRelIntersects", "outFields": fields,
             "returnGeometry": "true", "outSR": 31370, "geometryPrecision": 2}
+    # Ilk sayfa da resultOffset + orderByFields ile istenir: sunucu bunlarsiz
+    # sorguyu farkli siralayip sayfalar arasinda kayit tekrarliyor/kaybediyor.
+    base.update({"orderByFields": "OBJECTID"})
     pages, offset = [], 0
     for _ in range(MAX_PAGES):
         params = dict(base)
-        if offset:
-            params["resultOffset"] = offset
+        params["resultOffset"] = offset
         res = get_json(layer + "/query", params, timeout=QUERY_TIMEOUT)
         feats = res.get("features") or []
         pages.append(res)
@@ -204,11 +207,22 @@ def _query_box(layer, box, fields):
     return pages
 
 
-def parcels_in_box(box):
-    out = []
-    for res in _query_box(CADMAP_LAYER, box, PARCEL_FIELDS):
-        out.extend(_parcel_items(res))
+def _first_seen(items, key):
+    seen, out = set(), []
+    for it in items:
+        k = key(it)
+        if k in seen:
+            continue
+        seen.add(k)
+        out.append(it)
     return out
+
+
+def parcels_in_box(box):
+    items = []
+    for res in _query_box(CADMAP_LAYER, box, PARCEL_FIELDS):
+        items.extend(_parcel_items(res))
+    return _first_seen(items, lambda p: p["attributes"].get("OBJECTID") or p["capakey"])
 
 
 def buildings_in_box(box):
@@ -223,5 +237,5 @@ def buildings_in_box(box):
             a = f.get("attributes") or {}
             nature = " ".join(str(a.get("NATUR_DESC") or "").split())[:60] or None
             out.append({"id": a.get("OBJECTID"), "nature": nature, "rings": rings})
-    return out
+    return _first_seen(out, lambda b: b["id"] if b["id"] is not None else id(b))
 

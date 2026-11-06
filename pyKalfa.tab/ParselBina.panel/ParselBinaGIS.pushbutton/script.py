@@ -19,7 +19,6 @@ IronPython 2.7 uyumlu yazilmistir.
 import io
 import json
 import os
-import re
 import traceback
 
 from pyrevit import forms, revit, script
@@ -36,7 +35,6 @@ NO_FRAME_LABEL = "-- Cerceve cizme --"
 NO_NORTH_LABEL = "-- Kuzey oku ekleme --"
 DEFAULT_MARGIN_M = "30"
 MAX_MARGIN_M = 200.0
-CAPAKEY_RE = re.compile(r"^\d{5}[A-Z_]\d{4}/\d{2}[A-Z0-9_]\d{3}$")
 PRECISION_LABELS = {
     "house": u"bina",
     "address-point": u"adres noktasi",
@@ -82,9 +80,34 @@ def _last_error(output):
     return output
 
 
-# --- 1) Arama: adres veya CaPaKey -> aday secimi -----------------------------
+# --- 1) Arama: adres veya CaPaKey -> aday secimi -> parsel --------------------
+def _run_suggest(args):
+    """suggest_cli.py'yi calistirir, aday listesini dondurur; servis hatasinda cikar."""
+    _remove(SUGGEST_JSON)
+    exit_code, output = run_python(SUGGEST_SCRIPT, args + ["--output", SUGGEST_JSON])
+    logger.debug("suggest_cli cikti:\n{}".format(output))
+    payload = {}
+    if os.path.isfile(SUGGEST_JSON):
+        with io.open(SUGGEST_JSON, "r", encoding="utf-8") as f:
+            payload = json.load(f)
+    if exit_code != 0 or payload.get("error"):
+        forms.alert(
+            u"Adres servisine ulasilamadi:\n{}".format(payload.get("error") or _last_error(output)),
+            title="pyKalfa hata",
+            exitscript=True,
+        )
+    return payload.get("candidates") or []
+
+
+def _option_label(c):
+    return u"{}  ({})".format(c.get("label"), PRECISION_LABELS.get(c.get("precision"), c.get("precision")))
+
+
 def ask_location():
-    """Secilen adayi dondurur ({label, x, y, precision} veya {capakey, ...})."""
+    """(parsel adayi {capakey, numero, ...}, secilen adres etiketi veya None).
+
+    Parsel stil secimlerinden ONCE bulunur: CaPaKey yanlissa veya adresin
+    20 m icinde parsel yoksa kullaniciya bastan tekrar sorulur."""
     default = ""
     while True:
         text = forms.ask_for_string(
@@ -98,37 +121,28 @@ def ask_location():
         query = text.replace('"', " ").replace("\\", " ").strip()
         default = query
 
-        _remove(SUGGEST_JSON)
-        exit_code, output = run_python(SUGGEST_SCRIPT, ["--query", query, "--output", SUGGEST_JSON])
-        logger.debug("suggest_cli cikti:\n{}".format(output))
-        payload = {}
-        if os.path.isfile(SUGGEST_JSON):
-            with io.open(SUGGEST_JSON, "r", encoding="utf-8") as f:
-                payload = json.load(f)
-        if exit_code != 0 or payload.get("error"):
-            forms.alert(
-                u"Adres servisine ulasilamadi:\n{}".format(payload.get("error") or _last_error(output)),
-                title="pyKalfa hata",
-                exitscript=True,
-            )
-        candidates = payload.get("candidates") or []
+        candidates = _run_suggest(["--query", query])
         if not candidates:
             forms.alert(u"Adres / CaPaKey bulunamadi: {}\n\nTekrar deneyin.".format(query),
                         title="Parsel/Bina GIS")
             continue
 
-        by_label = {}
-        for c in candidates:
-            item = u"{}  ({})".format(c.get("label"), PRECISION_LABELS.get(c.get("precision"), c.get("precision")))
-            by_label[item] = c
-        options = [u"{}  ({})".format(c.get("label"), PRECISION_LABELS.get(c.get("precision"), c.get("precision")))
-                   for c in candidates]
+        by_label = dict((_option_label(c), c) for c in candidates)
         chosen = selectors.unwrap_selection(
-            forms.SelectFromList.show(options, title="Bulunan adresler - birini secin", multiselect=False)
+            forms.SelectFromList.show([_option_label(c) for c in candidates],
+                                      title="Bulunan adresler - birini secin", multiselect=False)
         )
         if not chosen:
             script.exit()
-        return by_label[chosen]
+        candidate = by_label[chosen]
+        if candidate.get("capakey"):
+            return candidate, None
+
+        parcels = _run_suggest(["--x", repr(float(candidate["x"])), "--y", repr(float(candidate["y"]))])
+        if parcels:
+            return parcels[0], candidate.get("label")
+        forms.alert(u"Bu adresin 20 m icinde kadastro parseli yok:\n{}\n\nBaska bir adres "
+                    u"veya CaPaKey deneyin.".format(candidate.get("label")), title="Parsel/Bina GIS")
 
 
 # --- 2) Pay (metre) -----------------------------------------------------------
@@ -150,7 +164,7 @@ def ask_margin():
         forms.alert("Gecersiz deger: {!r}. 0 ile {:.0f} m arasinda bir sayi girin.".format(text, MAX_MARGIN_M))
 
 
-location = ask_location()
+location, address_label = ask_location()
 margin_m = ask_margin()
 
 # --- 3) Stil secimleri (Parsel/Bina Aktar ile ayni sira ve basliklar) ---------
@@ -184,11 +198,7 @@ except Exception as ex:
     script.exit()
 
 # --- 4) Veri cekme (tek alt surec, ilerleme cubugu ile) -----------------------
-if location.get("capakey"):
-    prepare_args = ["--capakey", location["capakey"]]
-else:
-    prepare_args = ["--x", repr(float(location["x"])), "--y", repr(float(location["y"]))]
-prepare_args += ["--margin", repr(margin_m), "--output-dir", OUTPUT_DIR]
+prepare_args = ["--capakey", location["capakey"], "--margin", repr(margin_m), "--output-dir", OUTPUT_DIR]
 if chosen_text_note_type is None:
     prepare_args.append("--no-labels")
 
@@ -262,8 +272,8 @@ preview_path = os.path.join(OUTPUT_DIR, "revit_input_preview.png")
 
 selected = data.get("selected") or {}
 summary = u"Parsel: {} ({})\n".format(selected.get("numero"), selected.get("capakey"))
-if not location.get("capakey"):
-    summary += u"Adres: {}\n".format(location.get("label"))
+if address_label:
+    summary += u"Adres: {}\n".format(address_label)
 summary += u"Alan: parsel ± {:g} m\n\n".format(margin_m)
 summary += u"Parsel cizgisi: {} olusturuldu, {} atlandi\n".format(counts["lines"], counts["lines_skipped"])
 if chosen_frame_style is not None:
