@@ -12,6 +12,7 @@ cadastral images, and real walls from floor plan DXF files.
 | **Parsel/Bina Aktar** | Turns cadastral images (PNG) into Revit geometry: parcel boundaries as `DetailLine`, buildings as `FilledRegion`, parcel numbers as `TextNote`. |
 | **Parsel/Bina GIS** | In Wallonia, fetches parcel boundaries, buildings and parcel numbers from the SPW geoportal by address or CaPaKey and draws them with the same styles as Parsel/Bina Aktar. No images or OCR needed. |
 | **Duvar Aktar** | Converts walls in a floor plan DXF into real Revit `Wall` elements. |
+| **Rölöve Aktar** | Quick as-built model from a Polycam scan into an empty project: measured levels, walls fitted to the scanned faces, doors/windows and named rooms. |
 
 ## Requirements
 
@@ -151,6 +152,43 @@ parcel's cadastral attributes.
 
 > The whole import is a single transaction: if you do not like the
 > result, a single **Ctrl+Z** in Revit undoes all of it.
+
+### Rölöve Aktar — as-built model from a Polycam scan
+
+Builds a quick starting model from a Polycam (iPhone/iPad LiDAR) scan.
+The goal is a trustworthy survey: dimensions come from the scan, and
+anything uncertain is flagged rather than invented.
+
+**Required Polycam exports** (Basic plan; same folder, same base name):
+
+| File | In Polycam |
+|---|---|
+| `<name>.dxf` + `<name>.csv` | Floor plan → DXF / CSV (the floor-plan zip also works) |
+| `<name>.laz` | Point cloud → LAS — **georeferenced off** (`<name> georef.laz` is not used) |
+| `<name>.glb` | Mesh → GLTF |
+
+1. Open an empty project (the Architectural template is fine).
+2. **pyKalfa** → **Duvar** → **Rolove Aktar** and pick the DXF (or zip);
+   the other files are found automatically, missing ones are named.
+3. Preparation takes a few seconds (~5 s for the 4-storey sample). The
+   summary shows the levels (main floor = 0.00), whether each floor
+   aligned to the scan, and the wall statuses; levels can be edited. A
+   PNG preview per floor is written to `output/`.
+4. Pick the exterior wall type **once**, one type per interior thickness
+   group, and the door and window families (or "Opening kullan").
+5. Levels are named `Kat N (Scan)`; walls are created on their floor's
+   level. Exterior walls grow **outward from the scanned interior face**
+   (Location Line = Finish Face: Interior).
+
+Every wall/door/window carries a `pyKalfa Tarama Durumu` parameter:
+**olculdu** (measured from the LAZ), **duzeltildi** (DXF position
+corrected from the scan), **varsayildi** (default or unverified — check
+it). Use a view filter to colour them. Dimensions round to the nearest
+5 cm and levels to 1 cm; positions are not rounded.
+
+Running the button again in the same project is safe: elements created
+earlier are kept (even if moved), ones you deleted do not come back, and
+only missing ones are added.
 
 ## License
 

@@ -1,0 +1,9 @@
+title: Rolove Aktar
+tooltip: >
+  Polycam taramasindan bos projeye hizli rolove: Level, gercek duvarlar
+  (dis duvarlar taranan ic yuzden disa kalinlasir), kapi/pencere ya da
+  Opening ve adli odalar. Gereken 4 Polycam ciktisi ayni klasorde ayni
+  adla: kat plani DXF + CSV (Floor plan; zip de secilebilir), georef'i
+  KAPALI LAS/LAZ nokta bulutu (Point cloud) ve GLB mesh (GLTF). Her
+  duvar "olculdu / duzeltildi / varsayildi" durumuyla isaretlenir;
+  yeniden calistirmada mevcutlar korunur, silinenler geri gelmez.

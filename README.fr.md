@@ -13,6 +13,7 @@ de fichiers DXF de plans d'étage.
 | **Parsel/Bina Aktar** | Convertit des images cadastrales (PNG) en géométrie Revit : limites de parcelles en `DetailLine`, bâtiments en `FilledRegion`, numéros de parcelles en `TextNote`. |
 | **Parsel/Bina GIS** | En Wallonie, récupère les limites de parcelles, les bâtiments et les numéros de parcelles depuis le géoportail du SPW à partir d'une adresse ou d'un CaPaKey, et les dessine avec les mêmes styles que Parsel/Bina Aktar. Ni images ni OCR. |
 | **Duvar Aktar** | Convertit les murs d'un plan d'étage DXF en véritables éléments `Wall` de Revit. |
+| **Rölöve Aktar** | Relevé rapide depuis un scan Polycam dans un projet vide : niveaux mesurés, murs calés sur les faces scannées, portes/fenêtres et pièces nommées. |
 
 ## Prérequis
 
@@ -165,6 +166,47 @@ attributs cadastraux de la parcelle.
 
 > L'import complet forme une seule transaction : si le résultat ne vous
 > convient pas, un simple **Ctrl+Z** dans Revit annule tout.
+
+### Rölöve Aktar — relevé depuis un scan Polycam
+
+Produit un modèle de départ rapide à partir d'un scan Polycam (LiDAR
+iPhone/iPad). L'objectif est un relevé fiable : les cotes viennent du
+scan, ce qui est incertain est signalé, pas inventé.
+
+**Exports Polycam requis** (offre Basic ; même dossier, même nom) :
+
+| Fichier | Dans Polycam |
+|---|---|
+| `<nom>.dxf` + `<nom>.csv` | Floor plan → DXF / CSV (le zip du plan convient aussi) |
+| `<nom>.laz` | Point cloud → LAS — **géoréférencement désactivé** (`<nom> georef.laz` n'est pas utilisé) |
+| `<nom>.glb` | Mesh → GLTF |
+
+1. Ouvrez un projet vide (le gabarit Architectural suffit).
+2. **pyKalfa** → **Duvar** → **Rolove Aktar** et choisissez le DXF (ou le
+   zip) ; les autres fichiers sont trouvés automatiquement, les fichiers
+   manquants sont indiqués.
+3. La préparation prend quelques secondes (~5 s pour l'exemple de 4
+   niveaux). Le résumé affiche les niveaux (étage principal = 0.00), le
+   calage de chaque étage sur le scan et l'état des murs ; les niveaux
+   sont modifiables. Un aperçu PNG par étage est écrit dans `output/`.
+4. Choisissez le type de mur extérieur **une fois**, un type par groupe
+   d'épaisseur intérieure, puis les familles de portes et de fenêtres
+   (ou « Opening kullan »).
+5. Les niveaux s'appellent `Kat N (Scan)` ; chaque mur est créé sur le
+   niveau de son étage. Les murs extérieurs s'épaississent **vers
+   l'extérieur depuis la face intérieure scannée** (Location Line =
+   Finish Face: Interior).
+
+Chaque mur/porte/fenêtre porte le paramètre `pyKalfa Tarama Durumu` :
+**olculdu** (mesuré dans le LAZ), **duzeltildi** (position du DXF
+corrigée par le scan), **varsayildi** (valeur par défaut ou non vérifiée
+— à contrôler). Un filtre de vue permet de les colorer. Les cotes sont
+arrondies aux 5 cm les plus proches, les niveaux au cm ; les positions ne
+sont pas arrondies.
+
+Relancer le bouton dans le même projet est sans risque : les éléments
+déjà créés sont conservés (même déplacés), ceux que vous avez supprimés
+ne reviennent pas, seuls les manquants sont ajoutés.
 
 ## Licence
 
