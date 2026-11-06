@@ -680,6 +680,36 @@ def test_find_inputs_from_zip_ignores_georef(tmp):
 
 
 # --------------------------------------------------------------------------
+# ledger (Revit tarafi defteri; saf Python, Revit import'u yok)
+# --------------------------------------------------------------------------
+
+def _ledger():
+    lib = HERE.parent.parent / "lib" / "pykalfa" / "rolove"
+    if str(lib) not in sys.path:
+        sys.path.insert(0, str(lib))
+    import ledger
+    return ledger
+
+
+@test("ledger")
+def test_plan_actions_respects_deleted(tmp):
+    ledger = _ledger()
+    r = ledger.plan_actions(["a", "b", "c"], {"a": "u1", "b": "u2"}, {"u1"})
+    check(r == {"create": ["c"], "keep": ["a"], "deleted": ["b"]}, r)
+
+
+@test("ledger")
+def test_ledger_roundtrip_and_corrupt(tmp):
+    ledger = _ledger()
+    d = {"version": 1, "sources": ["k"], "items": {"a": "u"}}
+    check(ledger.loads(ledger.dumps(d))["items"] == {"a": "u"})
+    check(ledger.loads("not json") == ledger.empty())
+    check(ledger.loads("") == ledger.empty() and ledger.loads(None) == ledger.empty())
+    check(ledger.loads('{"version": 1}') == ledger.empty(), ledger.loads('{"version": 1}'))
+    check(ledger.empty() is not ledger.empty())                 # paylasilan sozluk yok
+
+
+# --------------------------------------------------------------------------
 
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser()
