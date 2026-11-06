@@ -25,7 +25,7 @@ from Autodesk.Revit.DB import (
 from pyrevit import script
 from System.Collections.Generic import List
 
-from pykalfa.revitutils import WarningSwallower, distance, view_elevation
+from pykalfa.revitutils import WarningSwallowerUnjoin, distance, view_elevation
 
 logger = script.get_logger()
 
@@ -145,7 +145,7 @@ def draw_revit_input(doc, view, data, line_style, frame_style, region_type,
 
     t = Transaction(doc, transaction_name)
     opts = t.GetFailureHandlingOptions()
-    opts.SetFailuresPreprocessor(WarningSwallower())
+    opts.SetFailuresPreprocessor(WarningSwallowerUnjoin())
     t.SetFailureHandlingOptions(opts)
     t.Start()
     try:

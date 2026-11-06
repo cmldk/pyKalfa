@@ -10,6 +10,7 @@ import math
 from Autodesk.Revit.DB import (
     Element,
     FailureProcessingResult,
+    FailureResolutionType,
     FailureSeverity,
     IFailuresPreprocessor,
     ViewType,
@@ -44,6 +45,37 @@ class WarningSwallower(IFailuresPreprocessor):
         for failure in failures_accessor.GetFailureMessages():
             if failure.GetSeverity() == FailureSeverity.Warning:
                 failures_accessor.DeleteWarning(failure)
+        return FailureProcessingResult.Continue
+
+
+class WarningSwallowerUnjoin(IFailuresPreprocessor):
+    """WarningSwallower + "Can't keep elements joined" hatalarini otomatik
+    "Unjoin Elements" ile cozer.
+
+    Revit, uclari degen DetailCurve'leri kendiliginden birbirine baglar
+    (join). Cok sayida ardisik (ozellikle neredeyse duz devam eden) cizgide
+    bazi baglar korunamaz ve commit sirasinda HATA seviyesinde "Can't keep
+    elements joined" cikar; kullanici diyalogda "Unjoin Elements"e basmak
+    zorunda kalir. Bu cozum (FailureResolutionType.DetachElements) cizgilerin
+    geometrisini degistirmez, yalniz aralarindaki otomatik bagi kaldirir.
+    Burada ayni cozum kod tarafindan uygulanir.
+
+    Yalniz DetachElements cozumu SUNAN hatalara dokunulur; diger hatalar
+    Revit'in varsayilan davranisina birakilir (WarningSwallower gibi)."""
+
+    def PreprocessFailures(self, failures_accessor):
+        resolved = False
+        for failure in failures_accessor.GetFailureMessages():
+            severity = failure.GetSeverity()
+            if severity == FailureSeverity.Warning:
+                failures_accessor.DeleteWarning(failure)
+            elif severity == FailureSeverity.Error and failure.HasResolutionOfType(
+                    FailureResolutionType.DetachElements):
+                failure.SetCurrentResolutionType(FailureResolutionType.DetachElements)
+                failures_accessor.ResolveFailure(failure)
+                resolved = True
+        if resolved:
+            return FailureProcessingResult.ProceedWithCommit
         return FailureProcessingResult.Continue
 
 
