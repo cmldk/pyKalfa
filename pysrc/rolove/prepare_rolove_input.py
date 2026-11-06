@@ -103,6 +103,12 @@ def find_inputs(input_path: Path, out_dir: Path, overrides=None):
     missing = [{"file": k, "polycam_export": POLYCAM_EXPORTS[k],
                 "expected": "{}.{}".format(root, k)}
                for k in FILE_KEYS if k not in found or not Path(found[k]).is_file()]
+    if suffix == ".zip" and "dxf" not in found:
+        for m in missing:
+            if m["file"] == "dxf":
+                m["note"] = ("Secilen '{}' icinde DXF yok (Polycam'in OBJ/mesh zip'i olabilir). "
+                             "Kat plani DXF'ini ya da 'Floor plan' zip'ini secin.".format(
+                                 input_path.name))
     found = {k: Path(v) for k, v in found.items() if Path(v).is_file()}
     return found, missing
 

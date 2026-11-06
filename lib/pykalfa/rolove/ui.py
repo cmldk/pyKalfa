@@ -38,7 +38,11 @@ def pick_input():
 
 
 def show_missing(data):
-    lines = ["Ayni klasorde ayni adla bulunamayan Polycam ciktilari:", ""]
+    lines = []
+    for m in data.get("missing", []):
+        if m.get("note"):
+            lines += [m["note"], ""]
+    lines += ["Ayni klasorde ayni adla bulunamayan Polycam ciktilari:", ""]
     for m in data.get("missing", []):
         lines.append("- {}  ->  Polycam'de: {}".format(m.get("expected") or m["file"],
                                                        m["polycam_export"]))

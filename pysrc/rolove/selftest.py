@@ -709,6 +709,19 @@ def test_find_inputs_from_zip_ignores_georef(tmp):
           missing)
 
 
+@test("prepare")
+def test_find_inputs_zip_without_dxf_says_so(tmp):
+    """Polycam'in OBJ (mesh) zip'i secilirse: 'bu zip'te DXF yok' denmeli."""
+    import zipfile
+    import prepare_rolove_input as pri
+    with zipfile.ZipFile(tmp / "p.zip", "w") as z:
+        z.writestr("p.obj", "o mesh\n")
+        z.writestr("p_mtl.mtl", "\n")
+    found, missing = pri.find_inputs(tmp / "p.zip", tmp / "out")
+    dxf = [m for m in missing if m["file"] == "dxf"]
+    check(dxf and "p.zip" in dxf[0].get("note", "") and "DXF" in dxf[0]["note"], missing)
+
+
 # --------------------------------------------------------------------------
 # ledger (Revit tarafi defteri; saf Python, Revit import'u yok)
 # --------------------------------------------------------------------------
@@ -726,34 +739,6 @@ def test_plan_actions_respects_deleted(tmp):
     ledger = _ledger()
     r = ledger.plan_actions(["a", "b", "c"], {"a": "u1", "b": "u2"}, {"u1"})
     check(r == {"create": ["c"], "keep": ["a"], "deleted": ["b"]}, r)
-
-
-def _xw(sid, a, b, outward):
-    return {"id": sid, "location": "interior_face", "start_ft": list(a), "end_ft": list(b),
-            "outward": list(outward)}
-
-
-@test("ledger")
-def test_exterior_axes_meet_at_corners(tmp):
-    _ledger()
-    import wallaxes
-    # Dis bukey kose: ic yuzler (5,0)'da bulusur; W = 1 ft.
-    walls = [_xw("a", (0, 0), (5, 0), (0, -1)), _xw("b", (5, 0), (5, 4), (1, 0)),
-             {"id": "i", "location": "center", "start_ft": [2, 0], "end_ft": [2, 4],
-              "outward": None}]
-    ax = wallaxes.exterior_axes(walls, 1.0, 0.01)
-    check(ax["a"]["axis"][1] == (5.5, -0.5) and ax["b"]["axis"][0] == (5.5, -0.5), ax)
-    check(ax["a"]["axis"][0] == (0.0, -0.5), ax["a"])            # serbest uc: duz ofset
-    check(ax["a"]["face"][1] == (5.5, 0.0) and ax["b"]["face"][0] == (5.0, -0.5), ax)
-    check("i" not in ax, ax)
-    # Ic bukey (reflex) kose: (0,0)->(5,0) disari -y, (5,0)->(5,-4) disari +x
-    r = wallaxes.exterior_axes([_xw("c", (0, 0), (5, 0), (0, -1)),
-                                _xw("d", (5, 0), (5, -4), (1, 0))], 1.0, 0.01)
-    check(r["c"]["axis"][1] == (5.5, -0.5) and r["d"]["axis"][0] == (5.5, -0.5), r)
-    # Ayni dogrultuda devam eden iki duvar: dokunulmaz
-    s = wallaxes.exterior_axes([_xw("e", (0, 0), (5, 0), (0, -1)),
-                                _xw("f", (5, 0), (9, 0), (0, -1))], 1.0, 0.01)
-    check(s["e"]["axis"][1] == (5.0, -0.5) and s["f"]["axis"][0] == (5.0, -0.5), s)
 
 
 @test("ledger")

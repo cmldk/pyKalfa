@@ -23,7 +23,11 @@ import time
 
 from Autodesk.Revit.DB import (
     BuiltInParameter,
+    FailureProcessingResult,
+    FailureResolutionType,
+    FailureSeverity,
     FilteredElementCollector,
+    IFailuresPreprocessor,
     Level,
     Line,
     Transaction,
@@ -35,6 +39,7 @@ from Autodesk.Revit.DB import (
     ViewPlan,
     Wall,
     WallLocationLine,
+    WallUtils,
     XYZ,
 )
 from Autodesk.Revit.DB.Structure import StructuralType
@@ -42,13 +47,14 @@ from pyrevit import script
 
 from pykalfa.revitutils import WarningSwallower, elem_name
 from pykalfa.rolove import ledger as ledger_mod
-from pykalfa.rolove import params, storage, wallaxes
+from pykalfa.rolove import params, storage
 
 logger = script.get_logger()
 
 FT_PER_M = 1.0 / 0.3048
 LINE_CHECK_FT = 0.001 * FT_PER_M        # 1 mm
 MIN_CURVE_FT = 0.01
+JOIN_ATTEMPTS = 4
 
 WIDTH_BIPS = {
     "door": ("DOOR_WIDTH", "FAMILY_WIDTH_PARAM", "FAMILY_ROUGH_WIDTH_PARAM"),
@@ -156,8 +162,8 @@ class _Ctx(object):
         self.wall_json = {}       # wall id -> JSON
         self.param_names = None
         self.type_cache = {}
-        self.axes = {}            # dis duvar id -> {"axis", "face"} (wallaxes)
         self.created_sids = []
+        self.new_walls = []        # (JSON, Wall): bu calistirmada olusturulanlar
 
     def plan(self, ids):
         existing = set(uid for uid in self.items.values() if _alive(self.doc, uid))
@@ -225,48 +231,85 @@ def _wall_type_for(ctx, w):
     return t or ctx.choices.exterior_type
 
 
+def _json_line(w, level):
+    return _xyz(w["start_ft"], level.Elevation), _xyz(w["end_ft"], level.Elevation)
+
+
+def _outward(w):
+    return XYZ(w["outward"][0], w["outward"][1], 0.0)
+
+
 def _create_wall(ctx, w, level):
+    """JSON cizgisi dis duvarda taranan IC YUZ, ic duvarda EKSEN'dir.
+
+    `Wall.Create` verilen egriyi projenin o anki "Location Line" ayarina
+    gore yorumlar (eksen olmayabilir) ve yeni duvarin `Orientation`'i
+    regenerate edilmeden okunamaz. Bu yuzden: olustur -> uc birlesimlerini
+    kapat -> regenerate -> (dis duvarda) yon kontrolu/Flip -> Location
+    Line'i acikca ayarla -> egriyi JSON cizgisine tasi.
+
+    Uclar bu sirada birlesik olursa, egri tasinirken Revit daha once
+    birlesmis KOMSU duvarin ucunu da surukler; birlesimler butun duvarlar
+    commit edildikten sonra `_join_walls` icinde acilir. Herhangi bir adim
+    patlarsa yarim duvar silinir (etiketsiz kalip cogalmasin)."""
     wall_type = _wall_type_for(ctx, w)
     p1, p2 = w["start_ft"], w["end_ft"]
     if math.hypot(p2[0] - p1[0], p2[1] - p1[1]) < MIN_CURVE_FT:
         raise ValueError("duvar cok kisa")
-    if w["location"] == "interior_face":
-        # Eksen: ic yuz + outward*W/2; kosede komsu dis duvarin ekseniyle
-        # kesistirilmis (wallaxes) -> Revit duvarlari kendiliginden birlestirir.
-        ax = ctx.axes[w["id"]]
-        a = _xyz(ax["axis"][0], level.Elevation)
-        b = _xyz(ax["axis"][1], level.Elevation)
-    else:
-        a, b = _xyz(p1, level.Elevation), _xyz(p2, level.Elevation)
+    exterior = w["location"] == "interior_face"
+    a, b = _json_line(w, level)
     wall = Wall.Create(ctx.doc, Line.CreateBound(a, b), wall_type.Id, level.Id,
                        float(w["height_ft"]), 0.0, False, False)
-    if w["location"] == "interior_face":
-        out = XYZ(w["outward"][0], w["outward"][1], 0.0)
-        if wall.Orientation.DotProduct(out) < 0:
-            wall.Flip()
-        ref = wall.get_Parameter(BuiltInParameter.WALL_KEY_REF_PARAM)
-        ref.Set(int(WallLocationLine.FinishFaceInterior))
+    try:
+        WallUtils.DisallowWallJoinAtEnd(wall, 0)
+        WallUtils.DisallowWallJoinAtEnd(wall, 1)
         ctx.doc.Regenerate()
-        curve = wall.Location.Curve
-        ends = [curve.GetEndPoint(0), curve.GetEndPoint(1)]
-        want = [_xyz(p, level.Elevation) for p in ctx.axes[w["id"]]["face"]]
-        err = max(min(e.DistanceTo(want[0]), e.DistanceTo(want[1])) for e in ends)
-        if err > LINE_CHECK_FT:
-            ctx.report.warnings.append(
-                "Duvar {}: ic yuz konumu JSON'dan {:.1f} mm sapti (tip: {})".format(
-                    w["id"], err / FT_PER_M * 1000.0, elem_name(wall_type)))
-    params.set_values(wall, ctx.param_names, w["status"], w.get("deviation_cm"),
-                      w.get("measured_thickness_cm"))
+        if exterior and wall.Orientation.DotProduct(_outward(w)) < 0:
+            wall.Flip()
+            ctx.doc.Regenerate()
+        key = WallLocationLine.FinishFaceInterior if exterior else WallLocationLine.WallCenterline
+        wall.get_Parameter(BuiltInParameter.WALL_KEY_REF_PARAM).Set(int(key))
+        ctx.doc.Regenerate()
+        wall.Location.Curve = Line.CreateBound(a, b)
+        # Bazi projelerde yeni duvar "Room Bounding = No" gelir; odalar
+        # duvarlardan sinir aldigi icin acikca acilir.
+        bounding = wall.get_Parameter(BuiltInParameter.WALL_ATTR_ROOM_BOUNDING)
+        if bounding is not None and not bounding.IsReadOnly:
+            bounding.Set(1)
+        params.set_values(wall, ctx.param_names, w["status"], w.get("deviation_cm"),
+                          w.get("measured_thickness_cm"))
+    except Exception:
+        try:
+            ctx.doc.Delete(wall.Id)
+        except Exception:  # noqa: BLE001 - asil hatayi gizleme
+            pass
+        raise
     return wall
+
+
+def _check_wall(ctx, w, wall):
+    """Birlesimlerden sonra: konum cizgisi JSON cizgisi UZERINDE mi, dis yuz
+    disa mi? Revit kose/T birlesiminde uclari cizgi boyunca uzatip
+    kisaltabilir (kosenin kapanmasi, beklenen); yalniz YANAL sapma olculur."""
+    (x1, y1), (x2, y2) = w["start_ft"], w["end_ft"]
+    length = math.hypot(x2 - x1, y2 - y1)
+    ux, uy = (x2 - x1) / length, (y2 - y1) / length
+    curve = wall.Location.Curve
+    err = max(abs((p.X - x1) * uy - (p.Y - y1) * ux)
+              for p in (curve.GetEndPoint(0), curve.GetEndPoint(1)))
+    exterior = w["location"] == "interior_face"
+    if err > LINE_CHECK_FT:
+        ctx.report.warnings.append(
+            "Duvar {}: {} konumu JSON'dan {:.1f} mm sapti (tip: {})".format(
+                w["id"], "ic yuz" if exterior else "eksen", err / FT_PER_M * 1000.0,
+                elem_name(wall.WallType)))
+    if exterior and wall.Orientation.DotProduct(_outward(w)) < 0:
+        ctx.report.warnings.append("Duvar {}: dis yuzu iceri bakiyor".format(w["id"]))
 
 
 def _stage_walls(ctx):
     walls = ctx.data.get("walls", [])
     plan = ctx.plan([w["id"] for w in walls])
-    width = ctx.choices.exterior_type.Width
-    for floor in set(w["floor"] for w in walls):
-        ctx.axes.update(wallaxes.exterior_axes(
-            [w for w in walls if w["floor"] == floor], width, LINE_CHECK_FT))
     for w in walls:
         sid = w["id"]
         ctx.wall_json[sid] = w
@@ -289,6 +332,79 @@ def _stage_walls(ctx):
         ctx.remember(sid, wall)
         ctx.walls[sid] = wall
         ctx.report.add("created", "wall", sid)
+        ctx.new_walls.append((w, wall))
+
+
+class _JoinFailures(IFailuresPreprocessor):
+    """Birlesim islemi icin: uyarilar silinir, "Can't keep elements joined"
+    birlesim kaldirilarak cozulur (geometri degismez). Baska bir HATA
+    (ör. "Element is reversed": kisa/kayik duvarlarda birlesim duvari ters
+    cevirir) varsa hatali elemanlar not edilir ve islem geri alinir;
+    cagiran onlari birlestirmeden yeniden dener. Kullaniciya diyalog
+    cikmaz, hicbir duvar sessizce silinmez."""
+
+    def __init__(self):
+        self.bad_ids = set()
+
+    def PreprocessFailures(self, fa):
+        resolved = False
+        for failure in fa.GetFailureMessages():
+            severity = failure.GetSeverity()
+            if severity == FailureSeverity.Warning:
+                fa.DeleteWarning(failure)
+            elif failure.HasResolutionOfType(FailureResolutionType.DetachElements):
+                failure.SetCurrentResolutionType(FailureResolutionType.DetachElements)
+                fa.ResolveFailure(failure)
+                resolved = True
+            else:
+                for eid in failure.GetFailingElementIds():
+                    self.bad_ids.add(eid.ToString())
+        if self.bad_ids:
+            return FailureProcessingResult.ProceedWithRollBack
+        if resolved:
+            return FailureProcessingResult.ProceedWithCommit
+        return FailureProcessingResult.Continue
+
+
+def _join_walls(ctx):
+    """Duvarlar birlesimsiz commit edildikten sonra uclarini ac: Revit
+    uca/govdeye degen duvarlari (kose, T) kendisi birlestirir ve uclari
+    cizgi boyunca uzatir/kisaltir. Birlesimi hata veren duvarlar
+    birlesimsiz birakilir (en cok JOIN_ATTEMPTS deneme)."""
+    skipped = set()
+    for _ in range(JOIN_ATTEMPTS):
+        pre = _JoinFailures()
+        t = Transaction(ctx.doc, "pyKalfa Rolove: birlesimler")
+        opts = t.GetFailureHandlingOptions()
+        opts.SetFailuresPreprocessor(pre)
+        opts.SetClearAfterRollback(True)
+        t.SetFailureHandlingOptions(opts)
+        t.Start()
+        try:
+            for w, wall in ctx.new_walls:
+                if wall.Id.ToString() in skipped:
+                    continue
+                WallUtils.AllowWallJoinAtEnd(wall, 0)
+                WallUtils.AllowWallJoinAtEnd(wall, 1)
+            status = t.Commit()
+        except Exception:
+            if t.HasStarted() and not t.HasEnded():
+                t.RollBack()
+            raise
+        if status == TransactionStatus.Committed:
+            break
+        new_bad = pre.bad_ids - skipped
+        if not new_bad:
+            raise RuntimeError("duvar birlesimleri Revit tarafindan geri alindi ({})".format(status))
+        skipped |= new_bad
+    else:
+        raise RuntimeError("duvar birlesimleri {} denemede tamamlanamadi".format(JOIN_ATTEMPTS))
+    for w, wall in ctx.new_walls:
+        if wall.Id.ToString() in skipped:
+            ctx.report.warnings.append(
+                "Duvar {}: komsu duvarlarla birlestirilemedi (Revit hatasi); uclari "
+                "serbest birakildi, kontrol edin".format(w["id"]))
+        _check_wall(ctx, w, wall)
 
 
 def _scan_type(ctx, kind, base_symbol, width_ft, height_ft, w_cm, h_cm):
@@ -450,6 +566,7 @@ def create_all(doc, app, data, choices):
         ("parametreler", lambda: setattr(ctx, "param_names", params.ensure_parameters(doc, app))),
         ("Level", lambda: _stage_levels(ctx)),
         ("duvarlar", lambda: _stage_walls(ctx)),
+        ("birlesimler", None),             # kendi islemlerini yonetir (_join_walls)
         ("acikliklar", lambda: _stage_openings(ctx)),
         ("odalar", lambda: _stage_rooms(ctx)),
         ("defter", lambda: _stage_ledger(ctx)),
@@ -458,6 +575,10 @@ def create_all(doc, app, data, choices):
     group.Start()
     try:
         for name, fn in stages:
+            if fn is None:
+                _join_walls(ctx)
+                logger.info("Rolove asamasi tamam: {}".format(name))
+                continue
             t = _transaction(doc, "pyKalfa Rolove: {}".format(name))
             t.Start()
             try:
