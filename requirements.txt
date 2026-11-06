@@ -10,5 +10,8 @@ easyocr>=1.7
 # duvar (Duvar Aktar)
 ezdxf>=1.1
 
+# rolove (Rolove Aktar) - Polycam LAZ nokta bulutu
+laspy[lazrs]>=2.5
+
 # ortak
 numpy>=1.26

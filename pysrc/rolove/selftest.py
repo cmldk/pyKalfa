@@ -145,6 +145,70 @@ def test_csv_parses_rooms(tmp):
 
 
 # --------------------------------------------------------------------------
+# cloud (GLB kat bantlari, LAZ, kat kotlari)
+# --------------------------------------------------------------------------
+
+@test("cloud")
+def test_story_bands_axis_swap(tmp):
+    import numpy as np
+    import glb_stories
+    # glTF (x, y, z) -> LAZ (x, -z, y)
+    verts = np.array([[-1, -8.8, -4], [2, -6.8, 5], [0, -7, 0]], dtype=np.float32)
+    fixtures.write_story_glb(tmp / "s.glb", [("Story 0", verts, np.array([[0, 1, 2]]))])
+    b = glb_stories.read_story_bands(tmp / "s.glb")[0]
+    check(b.index == 0 and b.name == "Story 0", b)
+    check(approx(b.zmin, -8.8, 1e-5) and approx(b.zmax, -6.8, 1e-5), b)
+    check(approx(b.ymin, -5, 1e-5) and approx(b.ymax, 4, 1e-5), b)
+    check(approx(b.xmin, -1, 1e-5) and approx(b.xmax, 2, 1e-5), b)
+
+
+@test("cloud")
+def test_load_laz_reads_points(tmp):
+    import numpy as np
+    import cloud
+    pts = np.array([[1.0, 2.0, 3.0], [-4.5, 0.25, -8.8]] * 50)
+    fixtures.write_laz(tmp / "p.laz", pts)
+    got = cloud.load_laz(tmp / "p.laz")
+    check(got.shape == (100, 3) and got.dtype == np.float32, (got.shape, got.dtype))
+    check(np.allclose(got[:2], pts[:2], atol=1e-4), got[:2])
+
+
+@test("cloud")
+def test_load_laz_rejects_georef(tmp):
+    import numpy as np
+    import cloud
+    pts = np.array([[5.406, 51.028, 70.0], [5.4061, 51.0281, 71.0]] * 50)
+    fixtures.write_laz(tmp / "g.laz", pts, georef=True)
+    check(raises(cloud.GeorefError, cloud.load_laz, tmp / "g.laz"))
+
+
+@test("cloud")
+def test_levels_ignore_table_and_step(tmp):
+    import glb_stories
+    import levels
+    s = fixtures.synthetic_building(tmp, write_files=True)
+    bands = glb_stories.read_story_bands(s["paths"]["glb"])
+    tris = glb_stories.read_story_triangles(s["paths"]["glb"])
+    lv = levels.measure_levels(tris, bands, [1, 2])
+    check([m.floor for m in lv] == [1, 2] and [m.story for m in lv] == [0, 1], lv)
+    check(approx(lv[0].floor_z, 0.00, 0.02) and approx(lv[1].floor_z, 2.80, 0.02),
+          [m.floor_z for m in lv])
+    check(approx(lv[0].ceiling_z, 2.50, 0.03) and approx(lv[1].ceiling_z, 5.30, 0.03),
+          [m.ceiling_z for m in lv])
+    check(0.0 < lv[0].confidence <= 1.0, lv[0].confidence)
+
+
+@test("cloud")
+def test_levels_floor_count_mismatch(tmp):
+    import glb_stories
+    import levels
+    s = fixtures.synthetic_building(tmp, write_files=True)
+    bands = glb_stories.read_story_bands(s["paths"]["glb"])
+    tris = glb_stories.read_story_triangles(s["paths"]["glb"])
+    check(raises(ValueError, levels.measure_levels, tris, bands, [1, 2, 3]))
+
+
+# --------------------------------------------------------------------------
 
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser()

@@ -21,6 +21,11 @@ LEVEL_STEP_M = 0.01
 # Ayni duvarin iki kopyasini elemek icin uc nokta toleransi.
 DUPLICATE_TOL_M = 0.005
 
+# --- Kat kotlari (levels.py): GLB kat mesh'inden ---------------------------
+LEVEL_BIN_M = 0.02            # Z histogram kutusu
+LEVEL_NORMAL_MIN = 0.9        # |nz| bunun ustu = yatay yuzey
+LEVEL_MIN_HEIGHT_M = 1.0      # tavan, dosemenin en az bu kadar ustunde
+
 
 def _round_step(value, step):
     return round(math.floor(value / step + 0.5) * step, 6)
