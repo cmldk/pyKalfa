@@ -9,6 +9,7 @@ aciklik 5 noktali dikdortgen.
 
 from __future__ import annotations
 
+import csv
 import math
 
 import ezdxf
@@ -93,3 +94,11 @@ def write_polycam_dxf(path, floors, offset=(0.0, 0.0)):
             msp.add_mtext("12 m2", dxfattribs={"layer": _layer(floor, "Labels-Areas"),
                                                "insert": (2, 2)})
     doc.saveas(str(path))
+
+
+def write_polycam_csv(path, rows):
+    """Polycam kat plani CSV'si (`Floor,Room,Description,Value`)."""
+    with open(path, "w", newline="", encoding="utf-8") as f:
+        w = csv.writer(f)
+        w.writerow(["Floor", "Room", "Description", "Value"])
+        w.writerows(rows)

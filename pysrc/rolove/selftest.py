@@ -115,6 +115,36 @@ def test_dxf_ignores_non_semantic_layers(tmp):
 
 
 # --------------------------------------------------------------------------
+# csv
+# --------------------------------------------------------------------------
+
+@test("csv")
+def test_csv_parses_rooms(tmp):
+    import polycam_csv
+    fixtures.write_polycam_csv(tmp / "r.csv", [
+        ("Floor 2", "Entire Floor", "Total livable floor area [m^2]", "89.4"),
+        ("Floor 2", "Living Room 1", "Ceiling height [m]", "2.5 "),
+        ("Floor 4", "Bedroom 2", "Ceiling height [m]", "0.7 - 2.4 "),
+        ("Floor 3", "Other 2", "Ceiling height [m] (approx)", "1.9 - 2.3 "),
+        ("Floor 2", "Living Room 1", "Door dimensions [m]", "0.8 x 2.1"),
+        ("Floor 2", "Living Room 1", "Window dimensions [m]", "2.6 x 0.9"),
+        ("Floor 2", "Living Room 1", "Floor area [m^2]", "35.2"),
+        ("Floor 2", "Living Room 1", "Sofa double dimensions (w x h x d) [m]", "3.6 x 0.8 x 1.1"),
+        ("All", "Settings", "Wall thickness [m] (total wall length: 158.878)", "0.100"),
+    ])
+    r = polycam_csv.read_report(tmp / "r.csv")
+    lr = r.rooms[(2, "Living Room 1")]
+    check(lr.ceiling_min == lr.ceiling_max == 2.5, lr)
+    check(lr.doors == [(0.8, 2.1)] and lr.windows == [(2.6, 0.9)], lr)
+    check(lr.area == 35.2, lr.area)
+    b = r.rooms[(4, "Bedroom 2")]
+    check((b.ceiling_min, b.ceiling_max) == (0.7, 2.4), b)
+    check((r.rooms[(3, "Other 2")].ceiling_min, r.rooms[(3, "Other 2")].ceiling_max) == (1.9, 2.3))
+    check(r.livable_area_by_floor == {2: 89.4}, r.livable_area_by_floor)
+    check(r.wall_thickness_setting == 0.100, r.wall_thickness_setting)
+
+
+# --------------------------------------------------------------------------
 
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser()
