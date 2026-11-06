@@ -5,6 +5,7 @@ Iptal edilen her diyalog scripti sonlandirir (`script.exit()`); boylece
 akis her zaman gecerli bir cevapla ilerler. IronPython 2.7.
 """
 
+import os
 from collections import Counter
 
 from Autodesk.Revit.DB import (
@@ -17,24 +18,85 @@ from Autodesk.Revit.DB import (
 from pyrevit import forms, script
 
 from pykalfa.revitutils import elem_name
+from pykalfa.rolove import inputs
 from pykalfa.rolove.creator import Choices
 from pykalfa.selectors import _symbol_label, pick_by_name
 
 logger = script.get_logger()
 
+CONTINUE = "Devam"
 CREATE = "Olustur"
 EDIT = "Kotlari duzenle"
 CANCEL = "Iptal"
 
 
-def pick_input():
-    path = forms.pick_file(
-        files_filter="Polycam kat plani (*.dxf;*.zip)|*.dxf;*.zip",
-        title="Polycam kat plani DXF'i ya da kat plani zip'i secin",
-    )
-    if not path:
+def _pick_one(key, folder=""):
+    i = inputs.BY_KEY[key]
+    return forms.pick_file(
+        files_filter=i["filter"], init_dir=folder or "",
+        title="{}/4 - {}  |  Polycam: {}".format(inputs.short_label(key), i["ext"], i["polycam"]))
+
+
+def _inputs_text(sel, probs):
+    bad = dict(probs)
+    lines = ["Rolove Aktar 4 Polycam ciktisi kullanir:", ""]
+    for i in inputs.INPUTS:
+        key = i["key"]
+        value = sel.get(key)
+        if value == inputs.FROM_ZIP:
+            shown = "Input 1 zip'inin icinden"
+        elif value:
+            shown = os.path.basename(value)
+        else:
+            shown = "-"
+        lines.append("[{}]  {}".format("EKSIK" if key in bad else "OK", inputs.label(key)))
+        lines.append("        {}".format(shown))
+        if key in bad:
+            lines.append("        Sorun: {}".format(bad[key]))
+        lines.append("        Polycam'de: {}".format(i["polycam"]))
+    lines += ["", "Input 1'le ayni klasorde ayni adli dosyalar kendiliginden onerilir;",
+              "dogru degilse ilgili Input'u secip degistirin.",
+              "(Polycam Basic plan gerekir.)"]
+    return "\n".join(lines)
+
+
+def pick_inputs():
+    """Input 1..4'u sectirir; {anahtar: yol | inputs.FROM_ZIP} dondurur.
+    Iptal scripti sonlandirir."""
+    first = _pick_one("dxf")
+    if not first:
         script.exit()
-    return path
+    sel = inputs.guess(first)
+    manual = set(["dxf"])
+    while True:
+        probs = inputs.problems(sel)
+        options = [] if probs else [CONTINUE]
+        by_option = {}
+        for i in inputs.INPUTS:
+            opt = "{} sec / degistir".format(inputs.short_label(i["key"]))
+            options.append(opt)
+            by_option[opt] = i["key"]
+        options.append(CANCEL)
+        choice = forms.alert(_inputs_text(sel, probs), title="Rolove Aktar - girdiler",
+                             options=options)
+        if choice == CONTINUE:
+            return sel
+        key = by_option.get(choice)
+        if key is None:
+            script.exit()
+        path = _pick_one(key, os.path.dirname(sel.get("dxf") or ""))
+        if not path:
+            continue
+        sel[key] = path
+        manual.add(key)
+        if key == "dxf":            # yeni kat plani: elle secilmeyenleri yeniden tahmin et
+            guessed = inputs.guess(path)
+            for k in ("csv", "laz", "glb"):
+                if k not in manual:
+                    if k in guessed:
+                        sel[k] = guessed[k]
+                    else:
+                        sel.pop(k, None)
 
 
 def show_missing(data):
@@ -42,12 +104,12 @@ def show_missing(data):
     for m in data.get("missing", []):
         if m.get("note"):
             lines += [m["note"], ""]
-    lines += ["Ayni klasorde ayni adla bulunamayan Polycam ciktilari:", ""]
+    lines += ["Hazirlik su girdileri bulamadi:", ""]
     for m in data.get("missing", []):
-        lines.append("- {}  ->  Polycam'de: {}".format(m.get("expected") or m["file"],
-                                                       m["polycam_export"]))
-    lines += ["", "Bu dosyalari ayni klasore ayni adla export edip tekrar deneyin.",
-              "(Polycam Basic plan gerekir; LAS'ta 'georeferenced' KAPALI olmali.)"]
+        key = m["file"]
+        name = inputs.label(key) if key in inputs.BY_KEY else key
+        lines.append("- {}  ->  Polycam'de: {}".format(name, m["polycam_export"]))
+    lines += ["", "Butonu tekrar calistirip eksik Input'u 'sec / degistir' ile secin."]
     forms.alert("\n".join(lines), title="Rolove Aktar - eksik girdi", exitscript=True)
 
 

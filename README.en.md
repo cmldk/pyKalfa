@@ -159,17 +159,23 @@ Builds a quick starting model from a Polycam (iPhone/iPad LiDAR) scan.
 The goal is a trustworthy survey: dimensions come from the scan, and
 anything uncertain is flagged rather than invented.
 
-**Required Polycam exports** (Basic plan; same folder, same base name):
+**Required inputs** (Polycam Basic plan):
 
-| File | In Polycam |
-|---|---|
-| `<name>.dxf` + `<name>.csv` | Floor plan → DXF / CSV (the floor-plan zip also works) |
-| `<name>.laz` | Point cloud → LAS — **georeferenced off** (`<name> georef.laz` is not used) |
-| `<name>.glb` | Mesh → GLTF |
+| Input | File | In Polycam |
+|---|---|---|
+| **Input 1** – Floor plan | `.dxf` (or the floor-plan `.zip`) | Floor plan → DXF |
+| **Input 2** – Room list | `.csv` (taken from the floor-plan zip if it is there) | Floor plan → CSV |
+| **Input 3** – Point cloud | `.laz` / `.las` — **georeferenced off** | Point cloud → LAS |
+| **Input 4** – 3D model | `.glb` | Mesh → GLTF |
+
+Polycam's OBJ (mesh) zip is not Input 1; it contains no DXF.
 
 1. Open an empty project (the Architectural template is fine).
-2. **pyKalfa** → **Duvar** → **Rolove Aktar** and pick the DXF (or zip);
-   the other files are found automatically, missing ones are named.
+2. **pyKalfa** → **Duvar** → **Rolove Aktar** and pick **Input 1**.
+   Inputs 2–4 with the same name in the same folder are suggested; the
+   inputs window marks each one `OK` / `EKSIK` (missing), and any wrong or
+   missing one can be picked with "Input N sec / degistir" (names need
+   not match).
 3. Preparation takes a few seconds (~5 s for the 4-storey sample). The
    summary shows the levels (main floor = 0.00), whether each floor
    aligned to the scan, and the wall statuses; levels can be edited. A

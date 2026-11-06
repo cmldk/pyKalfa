@@ -173,18 +173,23 @@ Produit un modèle de départ rapide à partir d'un scan Polycam (LiDAR
 iPhone/iPad). L'objectif est un relevé fiable : les cotes viennent du
 scan, ce qui est incertain est signalé, pas inventé.
 
-**Exports Polycam requis** (offre Basic ; même dossier, même nom) :
+**Entrées requises** (offre Polycam Basic) :
 
-| Fichier | Dans Polycam |
-|---|---|
-| `<nom>.dxf` + `<nom>.csv` | Floor plan → DXF / CSV (le zip du plan convient aussi) |
-| `<nom>.laz` | Point cloud → LAS — **géoréférencement désactivé** (`<nom> georef.laz` n'est pas utilisé) |
-| `<nom>.glb` | Mesh → GLTF |
+| Entrée | Fichier | Dans Polycam |
+|---|---|---|
+| **Input 1** – Plan d'étage | `.dxf` (ou le `.zip` du plan) | Floor plan → DXF |
+| **Input 2** – Liste des pièces | `.csv` (pris dans le zip du plan s'il y est) | Floor plan → CSV |
+| **Input 3** – Nuage de points | `.laz` / `.las` — **géoréférencement désactivé** | Point cloud → LAS |
+| **Input 4** – Modèle 3D | `.glb` | Mesh → GLTF |
+
+Le zip OBJ (mesh) de Polycam n'est pas l'Input 1 : il ne contient pas de DXF.
 
 1. Ouvrez un projet vide (le gabarit Architectural suffit).
-2. **pyKalfa** → **Duvar** → **Rolove Aktar** et choisissez le DXF (ou le
-   zip) ; les autres fichiers sont trouvés automatiquement, les fichiers
-   manquants sont indiqués.
+2. **pyKalfa** → **Duvar** → **Rolove Aktar** et choisissez l'**Input 1**.
+   Les Inputs 2–4 du même nom dans le même dossier sont proposés ; la
+   fenêtre des entrées marque chacun `OK` / `EKSIK` (manquant), et une
+   entrée fausse ou manquante se choisit avec « Input N sec / degistir »
+   (les noms n'ont pas à correspondre).
 3. La préparation prend quelques secondes (~5 s pour l'exemple de 4
    niveaux). Le résumé affiche les niveaux (étage principal = 0.00), le
    calage de chaque étage sur le scan et l'état des murs ; les niveaux

@@ -157,17 +157,22 @@ Polycam (iPhone/iPad LiDAR) taramasından mimar için hızlı bir başlangıç
 modeli üretir. Amaç güvenilir bir rölöve: ölçü taramadan gelir, belirsiz
 olan uydurulmaz, işaretlenir.
 
-**Gereken Polycam çıktıları** (Basic plan; hepsi aynı klasörde, aynı adla):
+**Gereken girdiler** (Polycam Basic plan):
 
-| Dosya | Polycam'de |
-|---|---|
-| `<ad>.dxf` + `<ad>.csv` | Floor plan → DXF / CSV (kat planı zip'i de seçilebilir) |
-| `<ad>.laz` | Point cloud → LAS — **georeferenced kapalı** (`<ad> georef.laz` kullanılmaz) |
-| `<ad>.glb` | Mesh → GLTF |
+| Girdi | Dosya | Polycam'de |
+|---|---|---|
+| **Input 1** – Kat planı | `.dxf` (ya da kat planı `.zip`'i) | Floor plan → DXF |
+| **Input 2** – Oda listesi | `.csv` (kat planı zip'indeyse oradan alınır) | Floor plan → CSV |
+| **Input 3** – Nokta bulutu | `.laz` / `.las` — **georeferenced kapalı** | Point cloud → LAS |
+| **Input 4** – 3B model | `.glb` | Mesh → GLTF |
+
+Polycam'in OBJ (mesh) zip'i Input 1 değildir; içinde DXF yoktur.
 
 1. Boş bir proje açın (Architectural şablon yeterli).
-2. **pyKalfa** → **Duvar** → **Rolove Aktar** ve DXF'i (ya da zip'i) seçin;
-   diğer dosyalar otomatik bulunur, eksik olan söylenir.
+2. **pyKalfa** → **Duvar** → **Rolove Aktar** ve **Input 1**'i seçin.
+   Aynı klasörde aynı adlı Input 2–4 kendiliğinden önerilir; girdi
+   penceresi her birini `OK` / `EKSIK` olarak gösterir, yanlış ya da eksik
+   olanı "Input N seç / değiştir" ile seçin (ad uyması gerekmez).
 3. Hazırlık birkaç saniye sürer (örnek 4 katlı evde ~5 s). Özet penceresi
    kat kotlarını (ana kat = 0.00), her katın taramaya oturup oturmadığını
    ve duvar durumlarını gösterir; kotlar düzeltilebilir. Kat başına PNG

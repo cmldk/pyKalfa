@@ -741,6 +741,49 @@ def test_plan_actions_respects_deleted(tmp):
     check(r == {"create": ["c"], "keep": ["a"], "deleted": ["b"]}, r)
 
 
+def _inputs():
+    _ledger()                                   # lib/pykalfa/rolove sys.path'e
+    import inputs
+    return inputs
+
+
+@test("inputs")
+def test_inputs_guess_siblings_and_skip_georef(tmp):
+    inputs = _inputs()
+    for name in ("Ev (1).dxf", "Ev.csv", "Ev georef.laz", "Ev.las", "Ev.glb", "baska.glb"):
+        (tmp / name).write_bytes(b"x")
+    g = inputs.guess(str(tmp / "Ev (1).dxf"))
+    check(g == {"dxf": str(tmp / "Ev (1).dxf"), "csv": str(tmp / "Ev.csv"),
+                "laz": str(tmp / "Ev.las"), "glb": str(tmp / "Ev.glb")}, g)
+    (tmp / "Ev.las").unlink()
+    g = inputs.guess(str(tmp / "Ev (1).dxf"))
+    check("laz" not in g, g)                    # yalniz georef'li var: onerilmez
+    check([k for k, _ in inputs.problems(g)] == ["laz"], inputs.problems(g))
+    g["laz"] = str(tmp / "Ev georef.laz")
+    check([k for k, _ in inputs.problems(g)] == ["laz"], inputs.problems(g))
+    check(inputs.label("laz").startswith("Input 3 - Nokta bulutu"), inputs.label("laz"))
+
+
+@test("inputs")
+def test_inputs_zip_csv_and_obj_zip(tmp):
+    import zipfile
+    inputs = _inputs()
+    with zipfile.ZipFile(tmp / "Plan.zip", "w") as z:
+        z.writestr("Plan.dxf", "0\nEOF\n")
+        z.writestr("Plan.csv", "a\n")
+    (tmp / "Plan.laz").write_bytes(b"x")
+    (tmp / "Plan.glb").write_bytes(b"x")
+    g = inputs.guess(str(tmp / "Plan.zip"))
+    check(g["csv"] == inputs.FROM_ZIP and not inputs.problems(g), (g, inputs.problems(g)))
+    check(inputs.cli_args(g) == ["--input", str(tmp / "Plan.zip"), "--laz", str(tmp / "Plan.laz"),
+                                 "--glb", str(tmp / "Plan.glb")], inputs.cli_args(g))
+    with zipfile.ZipFile(tmp / "Mesh.zip", "w") as z:
+        z.writestr("Mesh.obj", "o\n")
+    bad = inputs.problems({"dxf": str(tmp / "Mesh.zip"), "csv": str(tmp / "Plan.laz"),
+                           "laz": str(tmp / "Plan.laz"), "glb": str(tmp / "Plan.glb")})
+    check(sorted(k for k, _ in bad) == ["csv", "dxf"], bad)     # yanlis uzanti + OBJ zip
+
+
 @test("ledger")
 def test_ledger_roundtrip_and_corrupt(tmp):
     ledger = _ledger()

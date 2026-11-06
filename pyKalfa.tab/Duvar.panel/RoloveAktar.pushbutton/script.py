@@ -3,8 +3,10 @@
 
 Akis:
 
-  1. Kat plani DXF'i ya da kat plani zip'i secilir (`ui.pick_input`);
-     CSV / LAZ / GLB ayni klasorden ayni adla bulunur.
+  1. Numarali girdiler secilir (`ui.pick_inputs`): Input 1 kat plani
+     (.dxf / kat plani .zip), Input 2 oda listesi (.csv), Input 3 nokta
+     bulutu (.laz/.las, georef kapali), Input 4 3B model (.glb). Input 1'le
+     ayni adli digerleri onerilir; her biri ayrica degistirilebilir.
   2. `env/` CPython'u ile `pysrc/rolove/prepare_rolove_input.py` calisir
      (ilerleme cubugu, `PROGRESS|yuzde|mesaj`): katlar taramaya hizalanir,
      duvar yuzleri LAZ'dan olculur, `output/rolove_input.json` + kat
@@ -24,7 +26,7 @@ import traceback
 from pyrevit import forms, revit, script
 
 from pykalfa import bootstrap, paths
-from pykalfa.rolove import creator, ui
+from pykalfa.rolove import creator, inputs, ui
 from pykalfa.subproc import run_python
 
 logger = script.get_logger()
@@ -44,8 +46,8 @@ OUTPUT_DIR = paths.output_dir()
 PREPARE_SCRIPT = paths.pysrc_script(FEATURE, "prepare_rolove_input.py")
 JSON_PATH = os.path.join(OUTPUT_DIR, "rolove_input.json")
 
-input_path = ui.pick_input()
-logger.info("Girdi: {}".format(input_path))
+selection = ui.pick_inputs()
+logger.info("Girdiler: {}".format(selection))
 
 if os.path.isfile(JSON_PATH):
     try:
@@ -86,7 +88,7 @@ with forms.ProgressBar(title="Tarama hazirlaniyor: {value}%", indeterminate=Fals
             pb.update_progress(state["percent"], 100)
 
     exit_code, proc_output = run_python(
-        PREPARE_SCRIPT, ["--input", input_path, "--output-dir", OUTPUT_DIR],
+        PREPARE_SCRIPT, inputs.cli_args(selection) + ["--output-dir", OUTPUT_DIR],
         on_line=_on_line, on_poll=_tick)
     pb.update_progress(100, 100)
 
