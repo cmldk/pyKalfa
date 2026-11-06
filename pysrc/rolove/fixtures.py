@@ -195,6 +195,44 @@ def write_laz(path, points, georef=False):
 
 
 # --------------------------------------------------------------------------
+# Hizalama fixture'i
+# --------------------------------------------------------------------------
+
+L_FLOOR_WALLS = [
+    ((0, 0), (8, 0)), ((8, 0), (8, 3)), ((8, 3), (4, 3)),
+    ((4, 3), (4, 6)), ((4, 6), (0, 6)), ((0, 6), (0, 0)), ((6, 0), (6, 3)),
+]
+
+
+def _transform(xy, rot_deg, mirror, shift):
+    p = np.array(xy, dtype=np.float64)
+    if mirror:
+        p[:, 1] = -p[:, 1]
+    a = math.radians(rot_deg)
+    c, s = math.cos(a), math.sin(a)
+    p = np.stack([c * p[:, 0] - s * p[:, 1], s * p[:, 0] + c * p[:, 1]], axis=1)
+    return p + np.asarray(shift)
+
+
+def floor_faces_and_slice(rot_deg, mirror, shift, noise, thickness=0.10, seed=0):
+    """L bicimli bir kat: (DXF cercevesinde `DxfWall` listesi, tarama
+    cercevesinde yatay dilim noktalari Nx2 — iki yuz de taranmis)."""
+    import polycam_dxf
+    rng = np.random.default_rng(seed)
+    walls = [polycam_dxf.DxfWall(2, (p1, p2), thickness) for p1, p2 in L_FLOOR_WALLS]
+    faces = [f for w in walls for f in w.faces()]
+    samples = []
+    for (x1, y1), (x2, y2) in faces:
+        n = max(int(math.hypot(x2 - x1, y2 - y1) / 0.02), 2)
+        t = np.linspace(0, 1, n)
+        samples.append(np.stack([x1 + (x2 - x1) * t, y1 + (y2 - y1) * t], axis=1))
+    pts = _transform(np.vstack(samples), rot_deg, mirror, shift)
+    if noise:
+        pts = pts + rng.normal(0, noise, pts.shape)
+    return walls, pts
+
+
+# --------------------------------------------------------------------------
 # Sentetik bina
 # --------------------------------------------------------------------------
 

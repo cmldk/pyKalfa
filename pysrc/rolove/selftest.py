@@ -209,6 +209,148 @@ def test_levels_floor_count_mismatch(tmp):
 
 
 # --------------------------------------------------------------------------
+# align
+# --------------------------------------------------------------------------
+
+@test("align")
+def test_align_recovers_rot_and_shift(tmp):
+    import align
+    faces, pts = fixtures.floor_faces_and_slice(rot_deg=90, mirror=False, shift=(10.3, -1.4),
+                                                noise=0.005)
+    a = align.align_floor(2, faces, pts)
+    check(a.ok, a)
+    check(round(a.transform.rot_deg) % 360 == 90 and not a.transform.mirror, a.transform)
+    check(approx(a.transform.tx, 10.3, 0.01) and approx(a.transform.ty, -1.4, 0.01), a.transform)
+    check(a.rms_m < 0.01, a.rms_m)
+
+
+@test("align")
+def test_align_detects_mirror(tmp):
+    import align
+    faces, pts = fixtures.floor_faces_and_slice(rot_deg=0, mirror=True, shift=(0, 0), noise=0.005)
+    a = align.align_floor(2, faces, pts)
+    check(a.ok and a.transform.mirror, a)
+
+
+@test("align")
+def test_align_small_rotation_refined(tmp):
+    import align
+    faces, pts = fixtures.floor_faces_and_slice(rot_deg=181.5, mirror=False, shift=(-3, 2),
+                                                noise=0.005)
+    a = align.align_floor(2, faces, pts)
+    check(a.ok and approx(a.transform.rot_deg % 360, 181.5, 0.1), a.transform)
+
+
+@test("align")
+def test_align_ok_with_deduped_slice_and_clutter(tmp):
+    # Gercek veride dilim 5 cm hucrelere tekillesir (duvar boyunca ~1 nokta /
+    # 5 cm) ve duvar dibinde mobilya olur; dogru hizalama yine ok olmali.
+    import numpy as np
+    import align
+    faces, pts = fixtures.floor_faces_and_slice(rot_deg=0, mirror=False, shift=(3, 1),
+                                                noise=0.004)
+    rng = np.random.default_rng(2)
+    clutter = np.column_stack([rng.uniform(4, 7.5, 600), rng.uniform(1.10, 1.25, 600)])
+    pts = np.vstack([pts, clutter])
+    z = np.full((len(pts), 1), 1.3)
+    sl = align.slice_xy(np.hstack([pts, z]).astype(np.float32), 0.0)
+    a = align.align_floor(2, faces, sl)
+    check(a.ok, a)
+    check(approx(a.transform.tx, 3, 0.01) and approx(a.transform.ty, 1, 0.01), a.transform)
+
+
+@test("align")
+def test_support_counts_one_point_per_cell(tmp):
+    import numpy as np
+    import align
+    import polycam_dxf
+    wall = [polycam_dxf.DxfWall(2, ((0.0, 0.0), (2.0, 0.0)), 0.10)]
+    pts = np.column_stack([np.arange(0, 2.0, 0.05) + 0.025, np.full(40, 0.06)])
+    rms, support, _i = align._quality(wall, pts, align.Transform2D(0, False, 0, 0))
+    check(support > 0.9 and rms < 0.02, (rms, support))
+
+
+@test("align")
+def test_support_one_visible_face_is_enough(tmp):
+    # Dis duvarin dis yuzu iceriden gorunmez: tek yuzu taranmis duvar destekli.
+    import numpy as np
+    import align
+    import polycam_dxf
+    wall = [polycam_dxf.DxfWall(2, ((0.0, 0.0), (2.0, 0.0)), 0.10)]
+    pts = np.column_stack([np.arange(0, 2.0, 0.05), np.full(40, -0.08)])  # 3 cm iceride
+    _rms, support, _i = align._quality(wall, pts, align.Transform2D(0, False, 0, 0))
+    check(support > 0.9, support)
+
+
+@test("align")
+def test_align_prefer_resolves_symmetric_floor(tmp):
+    # Dikdortgen kat 0/180 derece ve aynaya gore simetrik; Polycam paftasinda
+    # butun katlar ayni yonde oldugundan diger katlarin yonu tercih edilir.
+    import numpy as np
+    import align
+    import polycam_dxf
+    rect = [((0, 0), (4, 0)), ((4, 0), (4, 2.5)), ((4, 2.5), (0, 2.5)), ((0, 2.5), (0, 0))]
+    walls = [polycam_dxf.DxfWall(1, s, 0.10) for s in rect]
+    faces = [f for w in walls for f in w.faces()]
+    pts = np.vstack([np.linspace(a, b, 200) for a, b in faces]) + np.array([5.0, -2.0])
+    a = align.align_floor(1, walls, pts, prefer=(0, False))
+    check(a.ok and round(a.transform.rot_deg) % 360 == 0 and not a.transform.mirror, a)
+    check(approx(a.transform.tx, 5.0, 0.01) and approx(a.transform.ty, -2.0, 0.01), a)
+
+
+@test("align")
+def test_align_auto_uses_low_slice_for_knee_walls(tmp):
+    # Cati kati: duvarlar yalniz 0.8 m (diz duvari); 1.0-1.6 m'de egik cati
+    # yuzeyi duvarlardan 0.6 m iceride. Alcak dilim secilmeli.
+    import numpy as np
+    import align
+    walls, xy = fixtures.floor_faces_and_slice(rot_deg=0, mirror=False, shift=(2, 3),
+                                               noise=0.004)
+    low = np.column_stack([np.repeat(xy, 4, axis=0),
+                           np.tile([0.2, 0.45, 0.55, 0.75], len(xy))])
+    xs = np.arange(0.0, 8.0, 0.02)
+    roof_xy = np.vstack([np.column_stack([xs, np.full_like(xs, 1.2)]),
+                         np.column_stack([xs, np.full_like(xs, 4.8)])]) + np.array([2.0, 3.0])
+    high = np.column_stack([np.repeat(roof_xy, 3, axis=0),
+                            np.tile([1.1, 1.3, 1.5], len(roof_xy))])
+    pts = np.vstack([low, high]).astype(np.float32)
+    a = align.align_floor_auto(4, walls, pts, 0.0, prefer=(0, False))
+    check(a.ok and tuple(a.slice_band) == (0.4, 0.65), a)
+    check(approx(a.transform.tx, 2, 0.01) and approx(a.transform.ty, 3, 0.01), a.transform)
+
+
+@test("align")
+def test_align_rejects_unrelated_cloud(tmp):
+    import numpy as np
+    import align
+    faces, _ = fixtures.floor_faces_and_slice(rot_deg=0, mirror=False, shift=(0, 0), noise=0)
+    a = align.align_floor(2, faces, np.random.default_rng(1).uniform(-5, 5, (5000, 2)))
+    check(not a.ok and a.reason, a)
+
+
+@test("align")
+def test_transform_apply_roundtrip(tmp):
+    import numpy as np
+    import align
+    t = align.Transform2D(rot_deg=90, mirror=True, tx=1.0, ty=2.0)
+    got = t.apply(np.array([[1.0, 0.0], [0.0, 1.0]]))
+    # ayna (x, -y) -> 90 derece (-y', x') -> oteleme
+    check(np.allclose(got, [[1.0, 3.0], [2.0, 2.0]]), got)
+    check(np.allclose(t.apply((1.0, 0.0)), (1.0, 3.0)), t.apply((1.0, 0.0)))
+    check(np.allclose(t.apply_dir((0.0, 1.0)), (1.0, 0.0)), t.apply_dir((0.0, 1.0)))
+
+
+@test("align")
+def test_slice_xy_band_and_dedupe(tmp):
+    import numpy as np
+    import align
+    pts = np.array([[0.01, 0.01, 1.2], [0.02, 0.02, 1.3], [5, 5, 0.2], [1, 1, 2.0]],
+                   dtype=np.float32)
+    sl = align.slice_xy(pts, 0.0)
+    check(sl.shape == (1, 2), sl)
+
+
+# --------------------------------------------------------------------------
 
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser()
