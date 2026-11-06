@@ -1,0 +1,7 @@
+title: Parsel/Bina GIS
+tooltip: >
+  Adres veya CaPaKey girip Valonya geoportalindan (SPW) parsel sinirlarini,
+  binalari ve parsel numaralarini alir; Parsel/Bina Aktar ile ayni line
+  style, filled region, text note ve kuzey oku secimleriyle aktif view'e
+  cizer. Goruntu, olcek ve OCR gerekmez. Internet baglantisi gerekir;
+  yalniz Valonya.

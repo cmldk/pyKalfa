@@ -10,6 +10,7 @@ cadastral images, and real walls from floor plan DXF files.
 | Button | What it does |
 | --- | --- |
 | **Parsel/Bina Aktar** | Turns cadastral images (PNG) into Revit geometry: parcel boundaries as `DetailLine`, buildings as `FilledRegion`, parcel numbers as `TextNote`. |
+| **Parsel/Bina GIS** | In Wallonia, fetches parcel boundaries, buildings and parcel numbers from the SPW geoportal by address or CaPaKey and draws them with the same styles as Parsel/Bina Aktar. No images or OCR needed. |
 | **Duvar Aktar** | Converts walls in a floor plan DXF into real Revit `Wall` elements. |
 
 ## Requirements
@@ -86,6 +87,40 @@ alignment cannot be verified you get a warning.
 > Parcel numbers are read with OCR, which is about 80% accurate. Similar
 > characters (G/6, A/4, B/8, S/5) may be confused — compare the result
 > with the source image and correct it manually if needed.
+
+### Parsel/Bina GIS — parcels and buildings from the geoportal
+
+**Wallonia only**, and an internet connection is required. There are no
+images, no scale and no OCR: parcel boundaries come from SPW
+`CADMAP_PARCELLES`, buildings from SPW PICC, and parcel numbers from the
+parcel's cadastral attributes.
+
+1. Switch to a **plan, detail, section or elevation** view.
+2. **pyKalfa** → **Parsel / Bina** → **Parsel/Bina GIS**.
+3. In order:
+   - type an **address** (e.g. `Rue du Parc 4, 4577 Modave`) or a
+     **CaPaKey** (e.g. `92053D0515/00B002`)
+   - pick one of the candidates found (you are asked again if none is
+     found)
+   - enter **how many metres** around the parcel to include (default 30,
+     maximum 200)
+   - the **same style choices** as Parsel/Bina Aktar: parcel lines, frame
+     (or *"Cerceve cizme"*), building Filled Region Type, parcel number
+     Text Note Type, north arrow (or *"Kuzey oku ekleme"*)
+4. The data is fetched in a few seconds behind a progress bar, then drawn,
+   and a summary opens.
+
+> The drawing area is the selected parcel's bounding box grown by the
+> margin; the frame is that rectangle, and neighbouring parcels and
+> buildings that cross it are clipped at the frame. As in Parsel/Bina
+> Aktar, the origin is the frame's bottom-left corner; the data is
+> north-up, so the north arrow is placed at 0°.
+
+> Parcel numbers come from the data, so there are no OCR errors. A check
+> image is left at `output/revit_input_preview.png`.
+>
+> Source: Plan parcellaire cadastral © AGDP/SPF Finances, via SPW ;
+> Bâtiments © SPW (PICC_VDIFF).
 
 ### Duvar Aktar — walls from DXF
 

@@ -11,6 +11,7 @@ de fichiers DXF de plans d'étage.
 | Bouton | Rôle |
 | --- | --- |
 | **Parsel/Bina Aktar** | Convertit des images cadastrales (PNG) en géométrie Revit : limites de parcelles en `DetailLine`, bâtiments en `FilledRegion`, numéros de parcelles en `TextNote`. |
+| **Parsel/Bina GIS** | En Wallonie, récupère les limites de parcelles, les bâtiments et les numéros de parcelles depuis le géoportail du SPW à partir d'une adresse ou d'un CaPaKey, et les dessine avec les mêmes styles que Parsel/Bina Aktar. Ni images ni OCR. |
 | **Duvar Aktar** | Convertit les murs d'un plan d'étage DXF en véritables éléments `Wall` de Revit. |
 
 ## Prérequis
@@ -95,6 +96,42 @@ peut pas être vérifié, un avertissement s'affiche.
 > d'environ 80 %. Des caractères proches (G/6, A/4, B/8, S/5) peuvent
 > être confondus : comparez le résultat avec l'image source et corrigez
 > manuellement si nécessaire.
+
+### Parsel/Bina GIS — parcelles et bâtiments depuis le géoportail
+
+**Wallonie uniquement**, connexion internet requise. Pas d'images, pas
+d'échelle, pas d'OCR : les limites de parcelles viennent du SPW
+`CADMAP_PARCELLES`, les bâtiments du PICC du SPW et les numéros des
+attributs cadastraux de la parcelle.
+
+1. Passez dans une vue **en plan, de détail, en coupe ou en élévation**.
+2. **pyKalfa** → **Parsel / Bina** → **Parsel/Bina GIS**.
+3. Dans l'ordre :
+   - saisissez une **adresse** (p. ex. `Rue du Parc 4, 4577 Modave`) ou
+     un **CaPaKey** (p. ex. `92053D0515/00B002`)
+   - choisissez l'un des résultats (la question est reposée si rien n'est
+     trouvé)
+   - indiquez **combien de mètres** autour de la parcelle inclure (30 par
+     défaut, 200 au maximum)
+   - les **mêmes choix de styles** que Parsel/Bina Aktar : lignes de
+     parcelles, cadre (ou *« Cerceve cizme »*), Filled Region Type des
+     bâtiments, Text Note Type des numéros, flèche du nord (ou *« Kuzey
+     oku ekleme »*)
+4. Les données sont récupérées en quelques secondes avec une barre de
+   progression, puis dessinées ; un récapitulatif s'ouvre.
+
+> La zone dessinée est le rectangle englobant de la parcelle choisie,
+> agrandi de la marge ; le cadre est ce rectangle, et les parcelles et
+> bâtiments voisins qui le traversent y sont découpés. Comme dans
+> Parsel/Bina Aktar, l'origine est le coin inférieur gauche du cadre ; les
+> données sont orientées nord en haut, la flèche du nord est donc posée à
+> 0°.
+
+> Les numéros de parcelles viennent des données : aucune erreur d'OCR.
+> Une image de contrôle est laissée dans `output/revit_input_preview.png`.
+>
+> Source : Plan parcellaire cadastral © AGDP/SPF Finances, via SPW ;
+> Bâtiments © SPW (PICC_VDIFF).
 
 ### Duvar Aktar — murs à partir d'un DXF
 

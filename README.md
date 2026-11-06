@@ -10,6 +10,7 @@ geometrisi, kat planı DXF'inden de gerçek duvarlar üretir.
 | Buton | Ne yapar |
 | --- | --- |
 | **Parsel/Bina Aktar** | Kadastro görüntülerinden (PNG) parsel sınırlarını `DetailLine`, bina alanlarını `FilledRegion`, parsel numaralarını `TextNote` olarak Revit'e çizer. |
+| **Parsel/Bina GIS** | Valonya'da adres veya CaPaKey ile SPW geoportalından parsel sınırlarını, binaları ve parsel numaralarını alıp Parsel/Bina Aktar ile aynı stillerle çizer. OCR ve görsel gerekmez. |
 | **Duvar Aktar** | Kat planı DXF'indeki duvarları gerçek Revit `Wall` elemanlarına dönüştürür. |
 
 ## Gereksinimler
@@ -88,6 +89,38 @@ doğrulanamazsa uyarı verilir.
 > Parsel numaraları OCR ile okunur, doğruluk ~%80'dir. Benzer
 > karakterler (G/6, A/4, B/8, S/5) karışabilir; sonucu kaynak görselle
 > karşılaştırıp gerekirse elle düzeltin.
+
+### Parsel/Bina GIS
+
+Yalnız **Valonya** için ve internet bağlantısı gerekir. Görüntü, ölçek ve
+OCR yoktur: parsel sınırları SPW `CADMAP_PARCELLES`, binalar SPW PICC,
+parsel numaraları parselin kadastro özniteliklerinden gelir.
+
+1. **Plan, detay, kesit veya cephe** görünümüne geçin.
+2. **pyKalfa** → **Parsel / Bina** → **Parsel/Bina GIS**.
+3. Sırasıyla:
+   - **adres** (ör. `Rue du Parc 4, 4577 Modave`) veya **CaPaKey**
+     (ör. `92053D0515/00B002`) yazın
+   - bulunan adaylardan birini seçin (bulunamazsa tekrar sorulur)
+   - parselin etrafında **kaç metre** alınacağını yazın (varsayılan 30,
+     en fazla 200)
+   - Parsel/Bina Aktar'daki **aynı stil seçimleri**: parsel çizgileri,
+     çerçeve (veya *"Cerceve cizme"*), bina Filled Region Type, parsel
+     numarası Text Note Type, kuzey oku (veya *"Kuzey oku ekleme"*)
+4. Veri birkaç saniyede bir ilerleme çubuğuyla alınır, sonra çizilir ve
+   özet açılır.
+
+> Çizim alanı, seçilen parselin sınır kutusunun verilen pay kadar
+> büyütülmüş hâlidir; çerçeve bu dikdörtgendir ve onu kesen komşu
+> parseller ile binalar çerçevede kırpılır. Orijin Parsel/Bina Aktar'daki
+> gibi çerçevenin sol-alt köşesidir; veri kuzey yukarı olduğu için kuzey
+> oku 0° konur.
+
+> Parsel numaraları veriden okunduğu için OCR hatası yoktur. Kontrol için
+> `output/revit_input_preview.png` görseli bırakılır.
+>
+> Kaynak: Plan parcellaire cadastral © AGDP/SPF Finances, via SPW ;
+> Bâtiments © SPW (PICC_VDIFF).
 
 ### Duvar Aktar
 
