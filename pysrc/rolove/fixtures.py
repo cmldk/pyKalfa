@@ -255,6 +255,36 @@ def _vwall_points(rng, p1, p2, z0, z1, step=0.05, noise=0.003):
     return pts + rng.normal(0, noise, pts.shape)
 
 
+# DXF'te bilerek hatali cizilmis duvarlar (tarama cercevesi koordinatlari;
+# DXF'e `SYN_DXF_OFFSET` eklenerek yazilir):
+#   - alt/ust dis duvarlarin ic yuzu dogru (y=0 / y=4),
+#   - sag dis duvarin ic yuzu 3 cm kayik (6.03; gercek 6.00),
+#   - sol dis duvarin ic yuzu 25 cm kayik (-0.25; gercek 0.00) -> duzeltilmez,
+#   - ic duvar DXF'te 0.10 kalin ve ekseni 3.04 (gercek 2.90..3.10, 0.20).
+SYN_DXF_OFFSET = (10.0, 5.0)
+SYN_WALLS = [
+    ((-0.30, -0.05), (6.08, -0.05), 0.10),
+    ((6.08, -0.05), (6.08, 4.05), 0.10),
+    ((6.08, 4.05), (-0.30, 4.05), 0.10),
+    ((-0.30, 4.05), (-0.30, -0.05), 0.10),
+    ((3.04, 0.0), (3.04, 4.0), 0.10),
+]
+SYN_ROOMS = {
+    1: [("Room A", [(0, 0), (2.9, 0), (2.9, 4), (0, 4)]),
+        ("Room B", [(3.1, 0), (6, 0), (6, 4), (3.1, 4)])],
+    2: [("Bedroom 2", [(0, 0), (2.9, 0), (2.9, 4), (0, 4)]),
+        ("Room B2", [(3.1, 0), (6, 0), (6, 4), (3.1, 4)])],
+}
+
+
+def synthetic_dxf_floors():
+    floors = {}
+    for f, rooms in SYN_ROOMS.items():
+        floors[f] = {"walls": list(SYN_WALLS), "doors": [], "windows": [], "openings": [],
+                     "rooms": rooms}
+    return floors
+
+
 def synthetic_building(tmp, write_files=False, seed=0):
     """Iki katli sentetik bina (tarama cercevesi, metre).
 
@@ -268,8 +298,16 @@ def synthetic_building(tmp, write_files=False, seed=0):
     for floor, (fz, cz) in floors.items():
         pts.append(_plane_points(rng, 0, 0, 6, 4, fz))
         pts.append(_plane_points(rng, 0, 0, 6, 4, cz))
-        for p1, p2 in (((0, 0), (6, 0)), ((6, 0), (6, 4)), ((6, 4), (0, 4)), ((0, 4), (0, 0)),
-                       ((2.9, 0), (2.9, 4)), ((3.1, 0), (3.1, 4))):
+        faces = [((0, 0), (6, 0)), ((6, 0), (6, 4)), ((6, 4), (0, 4)), ((0, 4), (0, 0)),
+                 ((2.9, 0), (2.9, 4)), ((3.1, 0), (3.1, 4))]
+        if floor == 1:
+            # Esya: duvar onundeki dolap/kitaplik arkasindaki yuzu gizler ve
+            # yuzden daha cok hucre doldurur (en guclu tepe = esya).
+            faces = [((0, 0), (0.2, 0)), ((3.5, 0), (6, 0))] + faces[1:5] + [
+                ((3.1, 0), (3.1, 0.2)), ((3.1, 2.2), (3.1, 4))]
+            for p1, p2 in (((0.2, 0.24), (3.5, 0.24)), ((3.35, 0.2), (3.35, 2.2))):
+                pts.append(_vwall_points(rng, p1, p2, fz, fz + 2.2))
+        for p1, p2 in faces:
             pts.append(_vwall_points(rng, p1, p2, fz, cz))
         parts = [quad(0, 0, 6, 4, fz, up=True), quad(0, 0, 6, 4, cz, up=False)]
         if floor == 1:
@@ -280,7 +318,9 @@ def synthetic_building(tmp, write_files=False, seed=0):
         v, f = merge_meshes(parts)
         stories.append(("Story {}".format(floor - 1), laz_to_gltf(v), f))
     points = np.vstack(pts).astype(np.float32)
-    result = {"points": points, "stories": stories, "floors": floors, "paths": {}}
+    result = {"points": points, "stories": stories, "floors": floors, "paths": {},
+              "dxf_offset": SYN_DXF_OFFSET, "dxf_floors": synthetic_dxf_floors(),
+              "rooms_scan": {f: list(SYN_ROOMS[f]) for f in SYN_ROOMS}}
     if write_files:
         tmp = Path(tmp)
         result["paths"]["glb"] = tmp / "p.glb"

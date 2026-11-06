@@ -43,6 +43,31 @@ SUPPORT_DIST_M = 0.05         # duvar yuzunun disinda destek sayilan pay
 SUPPORT_BIN_M = 0.10          # destek olcumunde duvar boyunca kutu boyu
 ALIGN_PREFER_MARGIN = 0.10    # tercih edilen yon, destekte bu kadar geride kalabilir
 
+# --- Duvar iyilestirme (refine.py): yuz uydurma, ic/dis, kalinlik --------
+FACE_BAND_M = 0.12            # nokta izgara indeksinin hucre boyu
+FACE_SEARCH_M = 0.30          # DXF yuzunun iki yaninda gercek yuzun aranacagi pay
+FACE_FIT_M = 0.03             # bulunan tepe etrafinda dogru uydurma bandi
+FACE_HIST_BIN_M = 0.01        # dik uzaklik histogram kutusu
+FACE_CELL_M = 0.05            # yuz uzerinde (boy x yukseklik) tekillestirme hucresi
+FACE_END_MARGIN_M = 0.15      # duvar uclarinda dik duvar noktalarini disarida birakir
+FACE_EDGE_RATIO = 0.30        # yuz tepesi, seritteki en guclu tepenin en az bu orani
+FACE_VOID_SEARCH_M = 0.10     # ic duvar govdesi (bos bant) DXF ekseninin t/2+bu payinda aranir
+FACE_VOID_RATIO = 0.30        # bos bant: en guclu tepenin en cok bu orani (kapi bosluklari
+                              # govdeye nokta dusurur; ornek veride 0.0-0.27)
+FACE_PARALLEL_DEG = 2.0       # ic duvarin iki yuzu paralel sayilma siniri (ornek: 1.1-1.8)
+FACE_Z_MARGIN_M = 0.30        # doseme ustu / tavan alti disarida birakilan pay
+FACE_MIN_POINTS = 200         # "yuz goruldu" icin en az nokta
+FACE_MIN_COVERAGE = 0.30      # "yuz goruldu" icin 5 cm kutularda doluluk orani
+FACE_TRIM = 0.20              # en kotu bu oran atilip yeniden uydurulur
+MAX_SHIFT_M = 0.10            # bundan buyuk oteleme duzeltilmez (DXF kalir, uyari)
+MAX_ROT_DEG = 2.0             # bundan buyuk donus duzeltilmez
+THICKNESS_RANGE_M = (0.05, 0.60)
+PARALLEL_DEG = 1.0            # iki yuz paralel sayilma siniri
+SIDE_PROBE_M = 0.20           # ic/dis yoklamasi: yuzun bu kadar otesi
+SIDE_PROBE_FRACTIONS = (0.25, 0.50, 0.75)
+CORNER_SNAP_M = 0.15          # uclari bu mesafede olan duvarlar birlestirilir
+DEFAULT_WALL_HEIGHT_M = 2.50
+
 
 def _round_step(value, step):
     return round(math.floor(value / step + 0.5) * step, 6)

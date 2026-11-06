@@ -351,6 +351,133 @@ def test_slice_xy_band_and_dedupe(tmp):
 
 
 # --------------------------------------------------------------------------
+# refine
+# --------------------------------------------------------------------------
+# Sentetik binada duvar sirasi fixtures.SYN_WALLS ile ayni:
+#   0 alt dis (dogru), 1 sag dis (ic yuz 3 cm kayik), 2 ust dis (dogru),
+#   3 sol dis (ic yuz 25 cm kayik), 4 ic duvar (DXF 0.10 / 3.04; gercek 0.20 / 3.00)
+
+_REFINED = {}
+
+
+def _refined(tmp, floor):
+    if floor not in _REFINED:
+        import polycam_csv
+        import polycam_dxf
+        import levels
+        import refine
+        from align import Transform2D
+        s = fixtures.synthetic_building(tmp)
+        ox, oy = s["dxf_offset"]
+        walls = [polycam_dxf.DxfWall(floor, ((x1 + ox, y1 + oy), (x2 + ox, y2 + oy)), t)
+                 for (x1, y1), (x2, y2), t in fixtures.SYN_WALLS]
+        rooms = [polycam_dxf.DxfRoom(floor, n, poly) for n, poly in s["rooms_scan"][floor]]
+        fz, cz = s["floors"][floor]
+        level = levels.LevelMeasure(floor, floor - 1, fz, cz, 1.0)
+        report = [polycam_csv.RoomReport(2, "Bedroom 2", 0.7, 2.4),
+                  polycam_csv.RoomReport(2, "Room B2", 2.5, 2.5)]
+        report = [r for r in report if r.floor == floor]
+        tf = Transform2D(0.0, False, -ox, -oy)
+        _REFINED[floor] = refine.refine_floor(walls, rooms, tf, s["points"], level, report)
+    return _REFINED[floor]
+
+
+def _room_side_ok(w, rooms):
+    import geom2d
+    (x1, y1), (x2, y2) = w.line
+    mx, my = (x1 + x2) / 2.0, (y1 + y2) / 2.0
+    inside = (mx - w.outward[0] * 0.2, my - w.outward[1] * 0.2)
+    outside = (mx + w.outward[0] * 0.2, my + w.outward[1] * 0.2)
+    in_room = any(geom2d.point_in_polygon(inside, p) for _, p in rooms)
+    out_room = any(geom2d.point_in_polygon(outside, p) for _, p in rooms)
+    return in_room and not out_room
+
+
+def _rw(line, side="interior"):
+    import refine
+    return refine.RefinedWall(
+        floor=2, dxf_center=line, side=side, location="center", line=line, outward=None,
+        thickness_dxf=0.10, measured_thickness=None, thickness_group_m=None, height=2.5,
+        height_status="olculdu", status="duzeltildi", deviation_cm=0.0, support=0,
+        warnings=[])
+
+
+@test("refine")
+def test_interior_wall_measured(tmp):
+    w = _refined(tmp, 1)[4]
+    check(w.side == "interior" and w.status == "olculdu", (w.side, w.status, w.warnings))
+    check(w.location == "center" and w.outward is None, (w.location, w.outward))
+    check(approx(w.measured_thickness, 0.20, 0.01) and w.thickness_group_m == 0.20,
+          (w.measured_thickness, w.thickness_group_m))
+    check(approx(w.deviation_cm, 4.0, 1.0), w.deviation_cm)
+    check(approx(w.line[0][0], 3.00, 0.01) and approx(w.line[1][0], 3.00, 0.01), w.line)
+
+
+@test("refine")
+def test_exterior_wall_face_corrected(tmp):
+    w = _refined(tmp, 1)[1]
+    check(w.side == "exterior" and w.location == "interior_face", (w.side, w.location))
+    check(w.status == "duzeltildi" and w.outward is not None, (w.status, w.warnings))
+    check(w.measured_thickness is None, w.measured_thickness)
+    check(approx(w.line[0][0], 6.00, 0.01) and approx(w.line[1][0], 6.00, 0.01), w.line)
+    check(approx(w.deviation_cm, 3.0, 1.0), w.deviation_cm)
+    check(_room_side_ok(w, fixtures.SYN_ROOMS[1]), (w.line, w.outward))
+
+
+@test("refine")
+def test_correct_exterior_walls_unchanged(tmp):
+    ws = _refined(tmp, 1)
+    for i, y in ((0, 0.0), (2, 4.0)):
+        w = ws[i]
+        check(w.side == "exterior" and w.status == "duzeltildi", (i, w.side, w.status))
+        check(approx(w.line[0][1], y, 0.01) and approx(w.line[1][1], y, 0.01), (i, w.line))
+        check(w.deviation_cm < 1.0, (i, w.deviation_cm))
+        check(_room_side_ok(w, fixtures.SYN_ROOMS[1]), (i, w.outward))
+
+
+@test("refine")
+def test_large_shift_not_applied(tmp):
+    w = _refined(tmp, 1)[3]
+    check(w.side == "exterior" and w.status == "varsayildi" and w.warnings,
+          (w.side, w.status, w.warnings))
+    check(approx(w.line[0][0], -0.25, 0.005), w.line)       # DXF ic yuzu korunur
+    check(w.outward is not None and w.outward[0] < -0.99, w.outward)   # disari = -x
+
+
+@test("refine")
+def test_heights(tmp):
+    w1 = _refined(tmp, 1)[4]
+    check(w1.height == 2.50 and w1.height_status == "olculdu", (w1.height, w1.height_status))
+    w2 = _refined(tmp, 2)[4]                                 # Bedroom 2 | Room B2
+    check(w2.height == 2.40 and w2.height_status == "varsayildi",
+          (w2.height, w2.height_status))
+
+
+@test("refine")
+def test_join_corners_closes_gap(tmp):
+    import refine
+    a = _rw(((0.0, 0.0), (5.0, 0.0)))
+    b = _rw(((5.0, 0.08), (5.0, 4.0)))
+    n = refine.join_corners([a, b], 0.15)
+    check(n == 2, n)
+    check(seg_len((a.line[1], b.line[0])) < 1e-6 and seg_len((a.line[1], (5.0, 0.0))) < 1e-6,
+          (a.line, b.line))
+
+
+@test("refine")
+def test_join_corners_t_junction_and_far(tmp):
+    import refine
+    a = _rw(((0.0, 0.0), (6.0, 0.0)))
+    b = _rw(((3.0, 0.10), (3.0, 4.0)))                       # T: a'nin ortasina 10 cm
+    c = _rw(((10.0, 0.0), (12.0, 0.0)))                      # uzak: dokunulmaz
+    n = refine.join_corners([a, b, c], 0.15)
+    check(n == 1, n)
+    check(seg_len((b.line[0], (3.0, 0.0))) < 1e-6, b.line)
+    check(a.line == ((0.0, 0.0), (6.0, 0.0)) and c.line == ((10.0, 0.0), (12.0, 0.0)),
+          (a.line, c.line))
+
+
+# --------------------------------------------------------------------------
 
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser()
