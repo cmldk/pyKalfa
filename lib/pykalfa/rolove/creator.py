@@ -85,6 +85,8 @@ class Choices(object):
         # {kalinlik cm: tip adi}: kullanici "Yeni tip olustur" dedi; tip
         # duvarlardan once dis duvar tipinden kopyalanip olusturulur.
         self.new_group_types = new_group_types or {}
+        # Yalniz Rolove Prototip: merdiven tipi. None = merdiven olusturulmaz.
+        self.stairs_type = None
 
     @property
     def floor_thickness_ft(self):
@@ -795,13 +797,23 @@ def create_all(doc, app, data, choices):
         from pykalfa.rolove import separations as sep_mod
         i = [n for n, _ in stages].index("odalar")
         stages = stages[:i] + (("oda ayiricilari", lambda: sep_mod.stage_separations(ctx)),) + stages[i:]
-    title ="Rolove Prototip" if data.get("prototype") else "Rolove Aktar"
+    own_tx = set()          # kendi Transaction/EditScope'larini yoneten asamalar
+    if data.get("stairs") and choices.stairs_type is not None:
+        from pykalfa.rolove import stairs_stage
+        i = [n for n, _ in stages].index("odalar")
+        stages = stages[:i] + (("merdivenler", lambda: stairs_stage.stage_stairs(ctx, _Recorder)),) + stages[i:]
+        own_tx.add("merdivenler")
+    title = "Rolove Prototip" if data.get("prototype") else "Rolove Aktar"
     group = TransactionGroup(doc, "pyKalfa: {}".format(title))
     group.Start()
     try:
         for name, fn in stages:
             if fn is None:
                 _join_walls(ctx)
+                logger.info("Rolove asamasi tamam: {}".format(name))
+                continue
+            if name in own_tx:
+                fn()
                 logger.info("Rolove asamasi tamam: {}".format(name))
                 continue
             t = _transaction(doc, "pyKalfa Rolove: {}".format(name))
@@ -845,7 +857,8 @@ def preview_plan(doc, data):
     led = storage.get_ledger(doc)
     items = led["items"]
     existing = set(uid for uid in items.values() if _alive(doc, uid))
-    ids = [x["id"] for k in ("levels", "walls", "openings", "rooms", "floors", "room_separations")
+    ids = [x["id"] for k in ("levels", "walls", "openings", "rooms", "floors", "room_separations",
+                             "stairs")
            for x in data.get(k, [])]
     plan = ledger_mod.plan_actions(ids, items, existing)
     key = (data.get("source") or {}).get("key")

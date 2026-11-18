@@ -1306,6 +1306,119 @@ def test_prepare_prototype_missing_inputs(tmp):
 
 
 # --------------------------------------------------------------------------
+# Merdivenler (Polycam DXF Objects-Fixtures: iki noktali cizgiler)
+# --------------------------------------------------------------------------
+
+def _stair_lines(x0=2.0, y0=1.0, width=1.0, depth=0.25, n_lines=8, along_x=True):
+    """Merdiven: `n_lines` paralel, esit aralikli basamak kenari (dis cerceve
+    kisa kenarlari dahil) + iki uzun yan kenar. Kos yonu +y (along_x: basamak
+    cizgileri x'e paralel)."""
+    segs = []
+    for i in range(n_lines):
+        y = y0 + i * depth
+        segs.append(((x0, y), (x0 + width, y)) if along_x else ((y, x0), (y, x0 + width)))
+    y1 = y0 + (n_lines - 1) * depth
+    side = [((x0, y0), (x0, y1)), ((x0 + width, y0), (x0 + width, y1))]
+    if not along_x:
+        side = [((a[1], a[0]), (b[1], b[0])) for a, b in side]
+    return segs + side
+
+
+@test("stairs")
+def test_find_strips_detects_stair(tmp):
+    import stairs as S
+    noise = [((0, 0), (0.6, 0)), ((0, 0.4), (0.6, 0.4)), ((5, 5), (5.4, 5.3))]
+    strips = S.find_strips(_stair_lines() + noise)
+    check(len(strips) == 1, strips)
+    s = strips[0]
+    check(s["treads"] == 7 and approx(s["width_m"], 1.0, 1e-6) and approx(s["depth_m"], 0.25, 1e-6), s)
+    check(approx(s["start"][0], 2.5, 1e-6) and approx(s["start"][1], 1.0, 1e-6), s)
+    check(approx(s["end"][0], 2.5, 1e-6) and approx(s["end"][1], 2.75, 1e-6), s)
+
+
+@test("stairs")
+def test_find_strips_rejects_short_and_uneven(tmp):
+    import stairs as S
+    check(S.find_strips(_stair_lines(n_lines=3)) == [])                  # 2 basamak
+    uneven = [((0, y), (1, y)) for y in (0.0, 0.25, 0.50, 0.90, 1.05)]
+    check(S.find_strips(uneven) == [], S.find_strips(uneven))
+    wide = [((0, y), (1, y)) for y in (0.0, 0.8, 1.6, 2.4, 3.2)]          # 80 cm "basamak"
+    check(S.find_strips(wide) == [])
+
+
+@test("stairs")
+def test_find_strips_rotated(tmp):
+    import stairs as S
+    rot = [(_rot(a, 30.0), _rot(b, 30.0)) for a, b in _stair_lines(n_lines=6)]
+    strips = S.find_strips(rot)
+    check(len(strips) == 1 and strips[0]["treads"] == 5, strips)
+
+
+def _stair_points(strip, floor_z, rise_per_tread, up=True, n=60, seed=0):
+    import numpy as np
+    rng = np.random.default_rng(seed)
+    (sx, sy), (ex, ey) = strip["start"], strip["end"]
+    L = math.dist((sx, sy), (ex, ey))
+    ux, uy = (ex - sx) / L, (ey - sy) / L
+    nx, ny = -uy, ux
+    pts = []
+    for i in range(strip["treads"]):
+        k = i if up else strip["treads"] - 1 - i
+        t = rng.uniform(i * strip["depth_m"] + 0.02, (i + 1) * strip["depth_m"] - 0.02, n)
+        s = rng.uniform(-0.4, 0.4, n)
+        z = floor_z + (k + 1) * rise_per_tread + rng.normal(0, 0.005, n)
+        pts.append(np.stack([sx + ux * t + nx * s, sy + uy * t + ny * s, z], axis=1))
+    return np.vstack(pts).astype(np.float32)
+
+
+@test("stairs")
+def test_direction_from_points(tmp):
+    import stairs as S
+    strip = S.find_strips(_stair_lines())[0]
+    up = S.orient(strip, _stair_points(strip, 0.0, 0.18, up=True), 0.0, 3.0)
+    check(up["direction_status"] == "olculdu" and approx(up["start"][1], 1.0, 1e-6), up)
+    down = S.orient(strip, _stair_points(strip, 0.0, 0.18, up=False), 0.0, 3.0)
+    check(down["direction_status"] == "olculdu" and approx(down["start"][1], 2.75, 1e-6), down)
+    none = S.orient(strip, _stair_points(strip, 0.0, 0.18)[:0], 0.0, 3.0)
+    check(none["direction_status"] == "varsayildi" and approx(none["start"][1], 1.0, 1e-6), none)
+
+
+@test("stairs")
+def test_stairs_records_need_upper_level(tmp):
+    import stairs as S
+    strip = S.orient(S.find_strips(_stair_lines())[0], None, 0.0, 3.0)
+    levels = [{"floor": 1, "elevation_m": 0.0}, {"floor": 2, "elevation_m": 2.0}]   # riht 0.25
+    recs = S.records({1: [strip], 2: [strip]}, levels)
+    check(len(recs) == 1 and recs[0]["floor"] == 1 and recs[0]["top_floor"] == 2, recs)
+    r = recs[0]
+    check(r["id"] == "p-stairs-1-0" and r["treads"] == 7, r)
+    check(approx(r["width_ft"], 1.0 * M2FT, 1e-6) and approx(r["start_ft"][1], 1.0 * M2FT, 1e-6), r)
+
+
+@test("stairs")
+def test_stairs_skipped_when_too_few_treads_for_storey(tmp):
+    # Ornek tarama Kat 2: 3 basamakli ara merdiven 3.00 m kati asamaz
+    # (riht 0.75 m); kurulmaz, nedeni uyarida.
+    import stairs as S
+    short = S.orient(S.find_strips(_stair_lines(n_lines=4))[0], None, 0.0, 3.0)
+    full = S.orient(S.find_strips(_stair_lines(n_lines=15))[0], None, 0.0, 3.0)
+    levels = [{"floor": 2, "elevation_m": 0.0}, {"floor": 3, "elevation_m": 3.0}]
+    warnings = []
+    recs = S.records({2: [short, full]}, levels, warnings)
+    check([r["treads"] for r in recs] == [14], recs)
+    check(len(warnings) == 1 and "Kat 2" in warnings[0] and "0.75" in warnings[0], warnings)
+
+
+@test("stairs")
+def test_prepare_prototype_has_stairs_key(tmp):
+    fixtures.synthetic_building(tmp, write_files=True)
+    check(run_proto_cli(["--input", str(tmp / "p.dxf"), "--output-dir", str(tmp / "out")]) == 0,
+          run_proto_cli.last.stderr[-500:])
+    j = _load_json(tmp / "out" / "prototip_input.json")
+    check(j.get("stairs") == [], j.get("stairs"))
+
+
+# --------------------------------------------------------------------------
 
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser()

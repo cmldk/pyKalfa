@@ -124,7 +124,13 @@ Polycam'in OBJ (mesh) zip'i Input 1 değildir; içinde DXF yoktur.
   en üst katın duvarları taranan yükseklikte kalır. Dış duvarlar taranan
   **iç yüzden dışa doğru** kalınlaşır. Döşeme tipini sonradan
   değiştirirseniz duvarların üst ofsetini de güncelleyin.
-- Çatı, merdiven ve merdiven boşluğu yok.
+- **Merdiven (isteğe bağlı):** Polycam DXF'indeki basamak çizgilerinden
+  bulunur; çıkış yönü nokta bulutundaki basamak yüksekliklerinden ölçülür.
+  İki kat arasında düz kollu Revit merdiveni olarak kurulur. Kat yüksekliğini
+  makul rihtle (≤ 26 cm) aşamayan ara merdivenler kurulmaz, raporda yazılır.
+- **Açık plan:** duvarsız komşu odaların arasına oda ayırıcı (Room
+  Separation Line) konur; her oda kendi alanıyla oluşur.
+- Çatı ve merdiven boşluğu yok.
 
 1. Boş bir proje açın (Architectural şablon yeterli).
 2. **pyKalfa** → **Duvar** → **Rolove Prototip** ve **Input 1**'i seçin.
@@ -133,9 +139,12 @@ Polycam'in OBJ (mesh) zip'i Input 1 değildir; içinde DXF yoktur.
    olanı "Input N seç / değiştir" ile seçin.
 3. Özet penceresi kat kotlarını ve toparlama sayılarını gösterir; kotlar
    düzeltilebilir. Kat başına `prototip_preview_katN.png` yazılır.
-4. Dış duvar tipini **bir kez**, her iç duvar kalınlık grubu için bir tip,
-   kapı ve pencere ailesini (ya da "Opening kullan") ve **döşeme tipini**
-   seçin. İşlem tek **Ctrl+Z** ile geri alınabilir.
+4. Dış duvar tipini **bir kez**, her iç duvar kalınlık grubu için bir tip
+   (ya da listenin başındaki *"Yeni tip olustur: Prototip Ic Duvar N cm"*:
+   dış duvar tipinden kopya, tam ölçülen kalınlıkta), kapı ve pencere
+   ailesini (ya da "Opening kullan"), **döşeme tipini** ve merdiven bulunduysa
+   **merdiven tipini** (ya da *"Merdiven olusturma"*) seçin. İşlem tek
+   **Ctrl+Z** ile geri alınabilir.
 
 Her duvar/kapı/pencere `pyKalfa Tarama Durumu` parametresini taşır:
 **olculdu** (taramadan ölçüldü), **duzeltildi** (konumu taramaya göre ya da

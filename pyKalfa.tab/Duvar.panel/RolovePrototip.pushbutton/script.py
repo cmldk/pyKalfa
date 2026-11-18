@@ -130,6 +130,7 @@ try:
     choices = ui.pick_choices(doc, data)
     choices.level_overrides = level_overrides
     choices.floor_type = proto_ui.pick_floor_type(doc)
+    choices.stairs_type = proto_ui.pick_stairs_type(doc, data)
 except Exception as ex:  # noqa: BLE001
     forms.alert("Secimler alinirken hata:\n{}\n\n{}".format(ex, traceback.format_exc()),
                 title="pyKalfa hata", exitscript=True)

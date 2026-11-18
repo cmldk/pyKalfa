@@ -139,7 +139,15 @@ de DXF.
   extérieurs s'épaississent **vers l'extérieur depuis la face intérieure
   scannée**. Si vous changez ensuite le type de dalle, mettez aussi à jour
   le décalage supérieur des murs.
-- Pas de toiture, d'escalier ni de trémie.
+- **Escaliers (facultatif) :** trouvés à partir des lignes de marches du DXF
+  Polycam ; le sens de montée est mesuré sur les hauteurs de marches du nuage
+  de points. Créés comme escalier droit Revit entre deux niveaux. Les petits
+  escaliers intermédiaires qui ne peuvent pas atteindre le niveau supérieur
+  avec une contremarche raisonnable (≤ 26 cm) ne sont pas créés et sont
+  signalés dans le rapport.
+- **Plan ouvert :** des lignes de séparation de pièces sont posées entre
+  pièces voisines sans mur, chaque pièce a ainsi sa propre surface.
+- Pas de toiture ni de trémie.
 
 1. Ouvrez un projet vide (le gabarit Architectural suffit).
 2. **pyKalfa** → **Duvar** → **Rolove Prototip** et choisissez l'**Input 1**.
@@ -149,8 +157,11 @@ de DXF.
 3. Le résumé affiche les niveaux et les chiffres du nettoyage ; les niveaux
    sont modifiables. Un `prototip_preview_katN.png` est écrit par étage.
 4. Choisissez le type de mur extérieur **une fois**, un type par groupe
-   d'épaisseur intérieure, les familles de portes et fenêtres (ou
-   « Opening kullan ») et le **type de dalle**. Un seul **Ctrl+Z** annule
+   d'épaisseur intérieure (ou en tête de liste *« Yeni tip olustur:
+   Prototip Ic Duvar N cm »* : copie du type extérieur à l'épaisseur
+   mesurée), les familles de portes et fenêtres (ou « Opening kullan »), le
+   **type de dalle** et, si des escaliers ont été trouvés, le **type
+   d'escalier** (ou *« Merdiven olusturma »*). Un seul **Ctrl+Z** annule
    tout.
 
 Chaque mur/porte/fenêtre porte le paramètre `pyKalfa Tarama Durumu` :

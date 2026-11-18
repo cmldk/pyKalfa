@@ -127,7 +127,14 @@ Polycam's OBJ (mesh) zip is not Input 1; it contains no DXF.
   top storey's walls keep the scanned height. Exterior walls grow
   **outward from the scanned interior face**. If you change the floor type
   later, update the walls' top offset too.
-- No roof, stairs or stair openings.
+- **Stairs (optional):** found from the tread lines in the Polycam DXF; the
+  up direction is measured from tread heights in the point cloud. Built as a
+  straight Revit stair between two levels. Short intermediate stairs that
+  cannot reach the next level with a reasonable riser (≤ 26 cm) are skipped
+  and listed in the report.
+- **Open plan:** room separation lines are placed between neighbouring rooms
+  that have no wall between them, so each room gets its own area.
+- No roof or stair openings.
 
 1. Open an empty project (the Architectural template is fine).
 2. **pyKalfa** → **Duvar** → **Rolove Prototip** and pick **Input 1**.
@@ -137,8 +144,11 @@ Polycam's OBJ (mesh) zip is not Input 1; it contains no DXF.
 3. The summary shows the levels and the tidying counts; levels can be
    edited. A `prototip_preview_katN.png` is written per storey.
 4. Pick the exterior wall type **once**, one type per interior thickness
-   group, the door and window families (or "Opening kullan") and the
-   **floor type**. One **Ctrl+Z** undoes everything.
+   group (or *"Yeni tip olustur: Prototip Ic Duvar N cm"* at the top: a copy
+   of the exterior type at exactly the measured thickness), the door and
+   window families (or "Opening kullan"), the **floor type** and, if stairs
+   were found, the **stairs type** (or *"Merdiven olusturma"*). One
+   **Ctrl+Z** undoes everything.
 
 Every wall/door/window carries a `pyKalfa Tarama Durumu` parameter:
 **olculdu** (measured from the scan), **duzeltildi** (position corrected

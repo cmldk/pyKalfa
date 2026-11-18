@@ -47,6 +47,9 @@ def build(found, missing, out_dir: Path):
         return doc, code
     _orig_progress(92, "Prototip toparlaniyor")
     prototype.tidy(doc)
+    _orig_progress(94, "Merdivenler")
+    doc["stairs"] = _find_stairs(doc, found)
+    doc["prototype"]["stairs"] = len(doc["stairs"])
     _orig_progress(96, "Prototip onizlemeleri")
     for p in doc.get("previews") or []:
         try:
@@ -58,6 +61,23 @@ def build(found, missing, out_dir: Path):
         png = prototype.render_floor(doc, f, Path(out_dir) / "prototip_preview_kat{}.png".format(f))
         doc["previews"].append(str(png.resolve()))
     return doc, 0
+
+
+def _find_stairs(doc, found):
+    """Merdiven istege bagli: bir sey ters giderse uyari + bos liste.
+    Yon icin nokta bulutu yeniden okunur (rolove hazirligi onu dondurmuyor)."""
+    import stairs
+    points = None
+    try:
+        import cloud
+        points = cloud.load_laz(found["laz"])
+    except Exception as ex:  # noqa: BLE001
+        doc.setdefault("warnings", []).append("Merdiven yonu icin nokta bulutu okunamadi: {}".format(ex))
+    try:
+        return stairs.find_stairs(doc, found["dxf"], points)
+    except Exception as ex:  # noqa: BLE001
+        doc.setdefault("warnings", []).append("Merdivenler bulunamadi: {}".format(ex))
+        return []
 
 
 def write_json(doc, out_dir):

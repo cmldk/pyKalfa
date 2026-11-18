@@ -54,7 +54,11 @@ def summary_text(data, plan, conflict_count, slabs=None):
     lines.append("  Duvarlar ust katin Level'ina baglanir ve dosemenin altinda biter; en ust "
                  "katin duvarlari taranan yukseklikte kalir.")
     lines.append("  Doseme = katin izi + alttaki katin izi (ustu acik kalan kisim duz cati "
-                 "varsayilir). Cati, merdiven ve merdiven boslugu yok.")
+                 "varsayilir). Cati ve merdiven boslugu yok.")
+    stairs = data.get("stairs") or []
+    if stairs:
+        lines.append("  Merdiven: {} bulundu (istege bagli; tip secerken 'Merdiven olusturma' "
+                     "ile atlanabilir).".format(len(stairs)))
     lines.append("  Dosemeler dis duvar tipi secildikten sonra hesaplanir (asagidaki "
                  "sayilara dahil degil).")
     if slabs and (slabs.get("alive") or slabs.get("deleted")):
@@ -87,6 +91,21 @@ def pick_floor_type(doc):
     return pick_by_name(types, "Doseme tipi (ust yuzu kat kotunda, kalinlik asagi dogru)",
                         "Projede kalinligi olan bir Floor Type bulunamadi.",
                         label_fn=_floor_label)
+
+
+def pick_stairs_type(doc, data):
+    """Merdiven istege bagli: bulunan merdiven yoksa sorulmaz (None);
+    "-- Merdiven olusturma --" secilirse None."""
+    stairs = data.get("stairs") or []
+    if not stairs:
+        return None
+    from Autodesk.Revit.DB.Architecture import StairsType
+    types = list(FilteredElementCollector(doc).OfClass(StairsType))
+    measured = len([s for s in stairs if s.get("direction_status") == "olculdu"])
+    return pick_by_name(
+        types, "Merdiven tipi ({} merdiven bulundu, {} tanesinin cikis yonu taramadan "
+               "olculdu)".format(len(stairs), measured),
+        "Projede Stairs Type yok.", skip_label="-- Merdiven olusturma --", label_fn=elem_name)
 
 
 def show_report(report, data, output):
