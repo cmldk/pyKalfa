@@ -28,6 +28,7 @@ from Autodesk.Revit.DB import (
     FailureSeverity,
     FilteredElementCollector,
     IFailuresPreprocessor,
+    InstanceVoidCutUtils,
     Level,
     Line,
     Transaction,
@@ -241,6 +242,7 @@ class _Ctx(object):
         self.new_walls = []        # (JSON, Wall): bu calistirmada olusturulanlar
         self.revit_messages = []   # (asama, tur, metin, [eleman id]) - _Recorder
         self.eid_sid = {}          # Revit ElementId metni -> kararli id
+        self.cut_stats = {}        # kapi/pencere kesme kontrolu: cut / fixed / notcut / unknown / error
 
     def plan(self, ids):
         existing = set(uid for uid in self.items.values() if _alive(self.doc, uid))
@@ -549,19 +551,57 @@ def _axis_point(w, host, offset_ft, z):
     return XYZ(x, y, z)
 
 
-def _check_host(ctx, o, inst, host):
-    """Teshis: Revit elemani gercekten istenen duvara mi bagladi? (Kapi/
-    pencere duvari kesmiyor, "Pick New Host" ile duzeliyor sorunu.)"""
+VOLUME_EPS_FT3 = 1e-4
+
+
+def _wall_volume(wall):
+    p = wall.get_Parameter(BuiltInParameter.HOST_VOLUME_COMPUTED)
     try:
-        ctx.doc.Regenerate()
+        return p.AsDouble() if p is not None and p.HasValue else None
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def _cut_state(ctx, inst, host, vol_before):
+    """"cut" | "notcut" | "unknown" (hacim okunamadi)."""
+    ctx.doc.Regenerate()
+    vol = _wall_volume(host)
+    if vol is None or vol_before is None:
+        return "unknown"
+    return "cut" if vol < vol_before - VOLUME_EPS_FT3 else "notcut"
+
+
+def _ensure_cut(ctx, o, inst, host, vol_before):
+    """Kapi/pencere duvari gercekten kesti mi (duvar hacmi azaldi mi)?
+    API ile yerlestirilen bazi ailelerde kesme bagi kurulmuyor: eleman dogru
+    duvara bagli, duvarin icinde, ayni fazda ama delik yok; ok tusuyla
+    oynatmak duzeltmiyor, "Pick New Host" duzeltiyor. Kesmediyse ailenin
+    void'i duvara `InstanceVoidCutUtils.AddInstanceVoidCut` ile baglanir.
+    Sonuc `ctx.cut_stats`'a sayilir, kalan sorunlar rapora yazilir."""
+    stats = ctx.cut_stats
+    try:
         actual = inst.Host
-        if actual is None:
-            ctx.report.warnings.append(u"{}: Revit host atamadi (Host = yok)".format(o["id"]))
-        elif actual.Id != host.Id:
-            ctx.report.warnings.append(u"{}: host {} '{}' oldu, beklenen duvar {}".format(
-                o["id"], actual.Id.ToString(), elem_name(actual), host.Id.ToString()))
-    except Exception as ex:  # noqa: BLE001 - teshis akisi durdurmaz
-        ctx.report.warnings.append(u"{}: host kontrol edilemedi ({})".format(o["id"], ex))
+        if actual is None or actual.Id != host.Id:
+            ctx.report.warnings.append(u"{}: host beklenen duvar degil ({})".format(
+                o["id"], "yok" if actual is None else actual.Id.ToString()))
+        state = _cut_state(ctx, inst, host, vol_before)
+        if state != "notcut":
+            stats[state] = stats.get(state, 0) + 1
+            return
+        has_void = InstanceVoidCutUtils.IsVoidInstanceCuttingElement(inst)
+        can_cut = InstanceVoidCutUtils.CanBeCutWithVoid(host)
+        if has_void and can_cut and not InstanceVoidCutUtils.InstanceVoidCutExists(host, inst):
+            InstanceVoidCutUtils.AddInstanceVoidCut(ctx.doc, host, inst)
+            if _cut_state(ctx, inst, host, vol_before) == "cut":
+                stats["fixed"] = stats.get("fixed", 0) + 1
+                return
+        stats["notcut"] = stats.get("notcut", 0) + 1
+        ctx.report.warnings.append(
+            u"{}: duvari kesmiyor (void={}, duvar void ile kesilebilir={}); 'Pick New Host' "
+            u"ile duzeltin".format(o["id"], has_void, can_cut))
+    except Exception as ex:  # noqa: BLE001 - kontrol akisi durdurmaz
+        stats["error"] = stats.get("error", 0) + 1
+        ctx.report.warnings.append(u"{}: kesme kontrol edilemedi ({})".format(o["id"], ex))
 
 
 def _create_opening(ctx, o, host, level):
@@ -581,6 +621,8 @@ def _create_opening(ctx, o, host, level):
                     o["id"], elem_name(base_symbol)))
     if symbol is not None:
         pt = _axis_point(w, host, o["offset_ft"], base)
+        ctx.doc.Regenerate()
+        vol_before = _wall_volume(host)
         inst = ctx.doc.Create.NewFamilyInstance(pt, symbol, host, level,
                                                 StructuralType.NonStructural)
         if o["kind"] == "window":
@@ -588,7 +630,7 @@ def _create_opening(ctx, o, host, level):
             if sill is not None and not sill.IsReadOnly:
                 sill.Set(float(o["sill_ft"]))
         params.set_values(inst, ctx.param_names, _worst(o["status"]), None, None)
-        _check_host(ctx, o, inst, host)
+        _ensure_cut(ctx, o, inst, host, vol_before)
         return inst
     half = o["width_ft"] / 2.0
     p1 = _axis_point(w, host, o["offset_ft"] - half, base + o["sill_ft"])
@@ -739,6 +781,12 @@ def create_all(doc, app, data, choices):
         raise
     group.Assimilate()
     _report_revit_messages(ctx)
+    if ctx.cut_stats:
+        s = ctx.cut_stats
+        ctx.report.warnings.insert(0, u"Kapi/pencere kesme kontrolu: {} kesti, {} void ile duzeltildi, "
+                                   u"{} kesmedi, {} olculemedi, {} hata".format(
+                                       s.get("cut", 0), s.get("fixed", 0), s.get("notcut", 0),
+                                       s.get("unknown", 0), s.get("error", 0)))
     ctx.report.seconds = time.time() - t0
     return ctx.report
 
