@@ -19,6 +19,32 @@ def riser_ft(height_ft, risers):
     return float(height_ft) / risers
 
 
+def fit_run(height_ft, scan_len_ft, max_riser_ft, winders=0):
+    """Kol taranan uzunlukta kalir (merdiven ust kattaki acikliga tam denk
+    gelsin): riht sayisi kat yuksekligi / tipin en yuksek rihti (yukari),
+    basamak derinligi = taranan duz kol uzunlugu / duz basamak sayisi.
+    {"risers", "straight_treads", "tread_ft", "run_ft"}"""
+    max_riser = max_riser_ft if max_riser_ft and max_riser_ft > 0 else DEFAULT_MAX_RISER_FT
+    risers = max(int(winders) + 2, int(math.ceil(float(height_ft) / max_riser - 1e-9)))
+    straight = risers - 1 - int(winders)
+    length = float(scan_len_ft or 0.0)
+    tread = length / straight if length > 0 else DEFAULT_TREAD_FT
+    return {"risers": risers, "straight_treads": straight, "tread_ft": tread,
+            "run_ft": length if length > 0 else tread * straight}
+
+
+def split_fitted(straight_treads, scan1, scan2):
+    """Duz basamaklari taranan kol basamaklarina oranla iki kola boler
+    (donusten once, sonra); taranmayan kola basamak verilmez."""
+    n = int(straight_treads)
+    if scan1 <= 0:
+        return (0, n)
+    if scan2 <= 0:
+        return (n, 0)
+    n1 = int(round(n * float(scan1) / (scan1 + scan2)))
+    return (n1, n - n1)
+
+
 def place_run(scan_run_ft, run_ft, fwd_free_ft, back_free_ft):
     """(geri, ileri) uzatma. Eksik kol once ust uctan ileri, bina icindeki
     bos yer kadar; kalan alt uctan geri, o da bos yer kadar; hala kalan

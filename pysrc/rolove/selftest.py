@@ -1515,6 +1515,32 @@ def test_split_treads_prefers_space(tmp):
 
 
 @test("stairs")
+def test_fit_run_keeps_scanned_length(tmp):
+    # Kullanici: merdiven ust kattaki acikliga tam denk gelsin -> kol taranan
+    # uzunlukta kalir, basamak derinligi ona gore. 3.00 m kat, en fazla 19 cm
+    # riht -> 16 riht; 3 yelpaze -> 12 duz basamak 1.95 m'ye: 16.25 cm.
+    C = _stairs_calc()
+    r = C.fit_run(3.0 * M2FT, 1.95 * M2FT, 0.19 * M2FT, winders=3)
+    check(r["risers"] == 16 and r["straight_treads"] == 12, r)
+    check(approx(r["tread_ft"], 1.95 / 12 * M2FT, 1e-9) and approx(r["run_ft"], 1.95 * M2FT, 1e-9), r)
+    # duz merdiven: 2.04 m kat -> 11 riht, 10 basamak 1.62 m'ye
+    r = C.fit_run(2.04 * M2FT, 1.62 * M2FT, 0.19 * M2FT)
+    check(r["risers"] == 11 and approx(r["tread_ft"], 0.162 * M2FT, 1e-9), r)
+    # tip siniri okunamadi -> 19 cm
+    check(C.fit_run(3.0 * M2FT, 3.0 * M2FT, 0.0)["risers"] == 16)
+    # en az bir duz basamak kalir
+    check(C.fit_run(0.3 * M2FT, 1.0 * M2FT, 0.19 * M2FT, winders=3)["straight_treads"] >= 1)
+
+
+@test("stairs")
+def test_split_fitted_treads_by_scanned_length(tmp):
+    C = _stairs_calc()
+    check(C.split_fitted(12, 0, 7) == (0, 12))                       # donus altta
+    check(C.split_fitted(12, 7, 0) == (12, 0))                       # donus ustte
+    check(C.split_fitted(12, 3, 3) == (6, 6))
+
+
+@test("stairs")
 def test_plan_run_reaches_level_with_type_limits(tmp):
     C = _stairs_calc()
     # 3.00 m kat, tip en fazla 19 cm riht -> 16 riht; taranan 26.6 cm derinlik

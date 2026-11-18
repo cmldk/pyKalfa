@@ -128,10 +128,14 @@ Polycam's OBJ (mesh) zip is not Input 1; it contains no DXF.
   **outward from the scanned interior face**. If you change the floor type
   later, update the walls' top offset too.
 - **Stairs (optional):** found from the tread lines in the Polycam DXF; the
-  up direction is measured from tread heights in the point cloud. Built as a
-  straight Revit stair from the level to the next one: the riser count and
-  tread depth follow the chosen stair type's limits; if the run must be
-  longer than scanned to reach the level, the report says so.
+  up direction is measured from tread heights in the point cloud. Built from
+  the level to the next one, starting and ending where scanned (so it lands
+  on the opening above): riser count = storey height ÷ the stair type's
+  maximum riser, tread depth from the scanned run length. If the tread is
+  shorter than the type's minimum the report says so; raise the type's
+  *Maximum Riser Height* for a shallower stair. Winding stairs that Polycam
+  splits into straight boxes (a run plus an adjacent box turned 90°) are
+  built as one stair with winder treads.
 - **Open plan:** room separation lines are placed between neighbouring rooms
   that have no wall between them, so each room gets its own area.
 - No roof or stair openings.

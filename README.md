@@ -126,9 +126,13 @@ Polycam'in OBJ (mesh) zip'i Input 1 değildir; içinde DXF yoktur.
   değiştirirseniz duvarların üst ofsetini de güncelleyin.
 - **Merdiven (isteğe bağlı):** Polycam DXF'indeki basamak çizgilerinden
   bulunur; çıkış yönü nokta bulutundaki basamak yüksekliklerinden ölçülür.
-  Alt kattan üst kata düz kollu Revit merdiveni olarak kurulur: riht sayısı
-  ve basamak derinliği seçilen merdiven tipinin sınırlarından hesaplanır; kat
-  yüksekliğine ulaşmak için kol taramadakinden uzun olursa raporda yazılır.
+  Alt kattan üst kata kurulur ve taranan yerinde başlayıp biter (üst kattaki
+  açıklığa denk gelir): riht sayısı kat yüksekliği ÷ merdiven tipinin en
+  yüksek rihti, basamak derinliği taranan kol uzunluğuna göre. Basamak tipin
+  alt sınırından kısa kalırsa raporda yazılır; daha yatık merdiven için tipin
+  *Maximum Riser Height* değerini artırın. Polycam'in düz kutulara böldüğü
+  dönen merdivenler (düz kol + bitişik 90° dönük kutu) yelpaze basamaklı tek
+  merdiven olarak kurulur.
 - **Açık plan:** duvarsız komşu odaların arasına oda ayırıcı (Room
   Separation Line) konur; her oda kendi alanıyla oluşur.
 - Çatı ve merdiven boşluğu yok.

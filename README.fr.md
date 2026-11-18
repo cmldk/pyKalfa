@@ -141,10 +141,14 @@ de DXF.
   le décalage supérieur des murs.
 - **Escaliers (facultatif) :** trouvés à partir des lignes de marches du DXF
   Polycam ; le sens de montée est mesuré sur les hauteurs de marches du nuage
-  de points. Créés comme escalier droit Revit du niveau au niveau supérieur :
-  le nombre de contremarches et le giron suivent les limites du type
-  d'escalier choisi ; si la volée doit être plus longue que celle scannée
-  pour atteindre le niveau, le rapport l'indique.
+  de points. Créés du niveau au niveau supérieur, en commençant et finissant
+  là où ils ont été scannés (ils tombent sur la trémie au-dessus) : nombre de
+  contremarches = hauteur d'étage ÷ contremarche maximale du type, giron
+  d'après la longueur de volée scannée. Si le giron est plus court que le
+  minimum du type, le rapport l'indique ; augmentez la *Maximum Riser
+  Height* du type pour un escalier moins raide. Les escaliers tournants que
+  Polycam découpe en boîtes droites (une volée + une boîte adjacente tournée
+  de 90°) sont créés comme un seul escalier à marches balancées.
 - **Plan ouvert :** des lignes de séparation de pièces sont posées entre
   pièces voisines sans mur, chaque pièce a ainsi sa propre surface.
 - Pas de toiture ni de trémie.
