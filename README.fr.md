@@ -141,10 +141,10 @@ de DXF.
   le décalage supérieur des murs.
 - **Escaliers (facultatif) :** trouvés à partir des lignes de marches du DXF
   Polycam ; le sens de montée est mesuré sur les hauteurs de marches du nuage
-  de points. Créés comme escalier droit Revit entre deux niveaux. Les petits
-  escaliers intermédiaires qui ne peuvent pas atteindre le niveau supérieur
-  avec une contremarche raisonnable (≤ 26 cm) ne sont pas créés et sont
-  signalés dans le rapport.
+  de points. Créés comme escalier droit Revit du niveau au niveau supérieur :
+  le nombre de contremarches et le giron suivent les limites du type
+  d'escalier choisi ; si la volée doit être plus longue que celle scannée
+  pour atteindre le niveau, le rapport l'indique.
 - **Plan ouvert :** des lignes de séparation de pièces sont posées entre
   pièces voisines sans mur, chaque pièce a ainsi sa propre surface.
 - Pas de toiture ni de trémie.

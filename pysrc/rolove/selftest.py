@@ -1397,10 +1397,9 @@ def test_stairs_records_need_upper_level(tmp):
 
 
 @test("stairs")
-def test_short_unmeasured_stair_assumes_riser(tmp):
-    # Ornek tarama Kat 2: 3 basamakli ara merdiven 3.00 m kati asamaz ve
-    # yukselmesi taramadan olculemedi -> 18 cm varsayilan rihtle kismi
-    # merdiven (4 x 0.18 = 0.72 m), yukseklik "varsayildi".
+def test_every_stair_reaches_upper_level(tmp):
+    # Kullanici: merdiven yarida kesilmesin, ust kata ulassin. Ornek tarama
+    # Kat 2'deki 3 ve 7 basamakli merdivenler de tam kat yuksekliginde kayit.
     import stairs as S
     short = S.orient(S.find_strips(_stair_lines(n_lines=4))[0], None, 0.0, 3.0)
     full = S.orient(S.find_strips(_stair_lines(n_lines=15))[0], None, 0.0, 3.0)
@@ -1408,31 +1407,33 @@ def test_short_unmeasured_stair_assumes_riser(tmp):
     warnings = []
     recs = S.records({2: [short, full]}, levels, warnings)
     check(sorted(r["treads"] for r in recs) == [3, 14] and warnings == [], (recs, warnings))
-    by = {r["treads"]: r for r in recs}
-    check(by[14]["kind"] == "full" and by[14]["top_offset_ft"] == 0.0
-          and by[14]["height_status"] == "olculdu", by[14])
-    check(by[3]["kind"] == "partial" and approx(by[3]["height_m"], 0.72, 1e-6)
-          and by[3]["height_status"] == "varsayildi", by[3])
+    for r in recs:
+        check(approx(r["height_ft"], 3.0 * M2FT, 1e-6) and r["top_floor"] == 3, r)
+        check(approx(r["depth_ft"], 0.25 * M2FT, 1e-6), r)
+
+
+def _stairs_calc():
+    _ledger()                                   # lib/pykalfa/rolove sys.path'e
+    import stairs_calc
+    return stairs_calc
 
 
 @test("stairs")
-def test_partial_stair_uses_measured_rise(tmp):
-    # Ornek tarama Kat 2: 7 basamakli merdiven 3.00 m kati asamaz ama
-    # taramada 1.60 m yukseliyor -> ust ofseti -1.40 m olan kismi merdiven.
-    import stairs as S
-    strip = S.orient(S.find_strips(_stair_lines(n_lines=8))[0], None, 0.0, 3.0)
-    strip["rise_m"], strip["direction_status"] = 1.60, "olculdu"
-    levels = [{"floor": 2, "elevation_m": 0.0}, {"floor": 3, "elevation_m": 3.0}]
-    warnings = []
-    recs = S.records({2: [strip]}, levels, warnings)
-    check(len(recs) == 1 and warnings == [], (recs, warnings))
-    r = recs[0]
-    check(r["kind"] == "partial" and approx(r["height_m"], 1.60, 1e-6)
-          and r["height_status"] == "olculdu", r)
-    check(approx(r["top_offset_ft"], -1.40 * M2FT, 1e-6), r)
-    check(approx(r["depth_ft"], 0.25 * M2FT, 1e-6), r)
-    steep = dict(strip, rise_m=2.5)                                      # 0.31 m riht
-    check(S.records({2: [steep]}, levels, []) == [])
+def test_plan_run_reaches_level_with_type_limits(tmp):
+    C = _stairs_calc()
+    # 3.00 m kat, tip en fazla 19 cm riht -> 16 riht; taranan 26.6 cm derinlik
+    # tipin 25 cm alt sinirindan buyuk -> korunur; kol 15 x 0.266 = 3.99 m
+    r = C.plan_run(3.0 * M2FT, 0.266 * M2FT, 0.19 * M2FT, 0.25 * M2FT)
+    check(r["risers"] == 16 and approx(r["tread_ft"], 0.266 * M2FT, 1e-9), r)
+    check(approx(r["run_ft"], 15 * 0.266 * M2FT, 1e-9), r)
+    # 2.04 m kat -> 11 riht; taranan 23.1 cm < tipin 28 cm -> 28 cm
+    r = C.plan_run(2.04 * M2FT, 0.231 * M2FT, 0.19 * M2FT, 0.28 * M2FT)
+    check(r["risers"] == 11 and approx(r["tread_ft"], 0.28 * M2FT, 1e-9), r)
+    check(approx(r["run_ft"], 10 * 0.28 * M2FT, 1e-9), r)
+    # tip siniri okunamadi (0) -> 19 cm / taranan derinlik
+    r = C.plan_run(3.0 * M2FT, 0.25 * M2FT, 0.0, 0.0)
+    check(r["risers"] == 16 and approx(r["tread_ft"], 0.25 * M2FT, 1e-9), r)
+    check(C.riser_ft(3.0 * M2FT, r["risers"]) <= 0.19 * M2FT + 1e-9)
 
 
 @test("stairs")

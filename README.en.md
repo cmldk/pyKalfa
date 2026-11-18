@@ -129,9 +129,9 @@ Polycam's OBJ (mesh) zip is not Input 1; it contains no DXF.
   later, update the walls' top offset too.
 - **Stairs (optional):** found from the tread lines in the Polycam DXF; the
   up direction is measured from tread heights in the point cloud. Built as a
-  straight Revit stair between two levels. Short intermediate stairs that
-  cannot reach the next level with a reasonable riser (≤ 26 cm) are skipped
-  and listed in the report.
+  straight Revit stair from the level to the next one: the riser count and
+  tread depth follow the chosen stair type's limits; if the run must be
+  longer than scanned to reach the level, the report says so.
 - **Open plan:** room separation lines are placed between neighbouring rooms
   that have no wall between them, so each room gets its own area.
 - No roof or stair openings.

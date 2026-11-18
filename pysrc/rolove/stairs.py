@@ -11,8 +11,9 @@ kenarlari). CSV merdiven sayisini ve olcusunu verir ama konumu vermez.
   2. `orient`: nokta bulutunda basamak basina medyan yukseklik; yukseklik
      hangi yone artiyorsa merdiven o yone cikar ("olculdu"). Olculemezse
      cizildigi yon kalir ("varsayildi").
-  3. `records`: yalniz ustunde bir kat olan merdivenler (Revit Stairs iki
-     Level arasinda kurulur); kimlik `p-stairs-<kat>-<k>`.
+  3. `records`: ustunde kat olan her merdiven alt kattan ust kata (Revit
+     Stairs iki Level arasinda; riht/kol secilen tipten hesaplanir);
+     kimlik `p-stairs-<kat>-<k>`.
 
 Koordinatlar metre; `records` feet yazar (JSON sozlesmesi).
 """
@@ -34,8 +35,6 @@ DUP_M = 0.01
 MIN_POINTS_PER_TREAD = 10
 MIN_MEASURED_TREADS = 3
 MIN_RISE_M = 0.5                          # olculen toplam yukselme bundan azsa yon belirsiz
-MAX_RISER_M = 0.26                        # kati bundan yuksek rihtle asan "merdiven" kurulmaz
-DEFAULT_RISER_M = 0.18                    # yukselmesi olculemeyen ara merdiven icin
 ID_PREFIX = "p-"
 
 
@@ -176,15 +175,12 @@ def orient(strip, points, floor_z, top_z):
 
 
 def records(strips_by_floor, levels, warnings=None):
-    """JSON kayitlari; yalniz ustunde kat olan merdivenler.
-
-    - "full": kati makul rihtle (<= MAX_RISER_M) asiyor -> alt kattan ust kata.
-    - "partial": kati asamiyor ama taramada olculen yukselme (`rise_m`) makul
-      rihtli -> alt kattan baslar, ust ofseti (yukselme - kat yuksekligi)
-      negatif; ör. birkac basamakli ara merdiven.
-    - kati asamiyor ve yukselme olculemedi: DEFAULT_RISER_M rihtle "partial",
-      `height_status` "varsayildi".
-    - olculen yukselme cok dik (> MAX_RISER_M riht): `warnings`'e, kurulmaz."""
+    """JSON kayitlari: ustunde kat olan HER merdiven alt kattan ust kata
+    (kullanici: yarida kesilmesin). Riht sayisi ve kol uzunlugu Revit
+    tarafinda secilen tipin sinirlarindan hesaplanir
+    (`lib/pykalfa/rolove/stairs_calc.plan_run`); burada taranan basamak
+    derinligi, genislik, baslangic ve cikis yonu tasinir. Ustunde kat
+    olmayan merdiven `warnings`'e yazilir."""
     import prototype
     tops = prototype.top_floors(levels)
     elev = {lv["floor"]: float(lv["elevation_m"]) for lv in levels}
@@ -200,32 +196,15 @@ def records(strips_by_floor, levels, warnings=None):
                                     "kurulmadi".format(f, s["treads"]))
                 continue
             storey = elev.get(top, 0.0) - elev.get(f, 0.0)
-            risers = s["treads"] + 1
-            riser = storey / risers
-            rise = s.get("rise_m")
-            if riser <= MAX_RISER_M:
-                kind, height, h_status = "full", storey, "olculdu"
-            elif rise and rise < storey and rise / risers <= MAX_RISER_M:
-                kind, height, h_status = "partial", float(rise), "olculdu"
-            elif not rise and risers * DEFAULT_RISER_M < storey:
-                kind, height, h_status = "partial", risers * DEFAULT_RISER_M, "varsayildi"
-            else:
-                if warnings is not None:
-                    warnings.append(
-                        "Kat {}: {} basamakli merdiven Kat {}'e {:.2f} m rihtle ulasir (en fazla "
-                        "{:.2f}), taramada {:.2f} m yukseliyor; kurulmadi".format(
-                            f, s["treads"], top, riser, MAX_RISER_M, rise or 0.0))
-                continue
             k += 1
             out.append({
-                "kind": kind, "height_m": round(height, 3), "height_status": h_status,
-                "top_offset_ft": 0.0 if kind == "full" else (height - storey) * ft,
-                "depth_ft": s["depth_m"] * ft,
                 "id": "{}stairs-{}-{}".format(ID_PREFIX, f, k - 1), "floor": f, "top_floor": top,
+                "height_m": round(storey, 3), "height_ft": storey * ft,
                 "start_ft": [s["start"][0] * ft, s["start"][1] * ft],
                 "end_ft": [s["end"][0] * ft, s["end"][1] * ft],
                 "width_ft": s["width_m"] * ft, "width_m": round(s["width_m"], 3),
-                "depth_m": round(s["depth_m"], 3), "treads": int(s["treads"]),
+                "depth_ft": s["depth_m"] * ft, "depth_m": round(s["depth_m"], 3),
+                "treads": int(s["treads"]),
                 "direction_status": s.get("direction_status", "varsayildi")})
     return out
 
