@@ -982,6 +982,93 @@ def test_tidy_prefixes_ids_and_names(tmp):
     check(doc["prototype"]["params"]["angle_max_deg"] == 5.0, doc["prototype"])
 
 
+def _room(floor, x0, y0, x1, y1, name="Oda"):
+    return {"id": "r{}{}{}".format(floor, x0, y0), "floor": floor, "name": name,
+            "polygon_ft": [[x0 * M2FT, y0 * M2FT], [x1 * M2FT, y0 * M2FT],
+                           [x1 * M2FT, y1 * M2FT], [x0 * M2FT, y1 * M2FT]],
+            "label_point_ft": [(x0 + x1) / 2 * M2FT, (y0 + y1) / 2 * M2FT]}
+
+
+def _by_floor(loops):
+    out = {}
+    for x in loops:
+        out.setdefault(x["floor"], []).append(x)
+    return out
+
+
+@test("proto")
+def test_floor_loops_rectangle_to_outer_face(tmp):
+    import prototype as P
+    doc = P.tidy(_proto_doc(_rect_walls(2, 0, 0, 10, 8), {2: 0.0}))
+    fl = P.floor_loops(doc, 0.30)
+    check(len(fl) == 1 and len(fl[0]["loops_ft"]) == 1, fl)
+    check(approx(fl[0]["area_m2"], 10.6 * 8.6, 0.05), fl[0]["area_m2"])
+    check(fl[0]["id"] == "p-floor-2-0" and fl[0]["floor"] == 2, fl[0]["id"])
+    xs = [p[0] for p in fl[0]["loops_ft"][0]]
+    check(approx(min(xs), -0.30 * M2FT, 1e-3) and approx(max(xs), 10.30 * M2FT, 1e-3), xs)
+
+
+@test("proto")
+def test_floor_loops_union_with_floor_below(tmp):
+    import prototype as P
+    doc = P.tidy(_proto_doc(_rect_walls(2, 0, 0, 12, 8) + _rect_walls(3, 0, 0, 6, 8),
+                            {2: 0.0, 3: 3.0}))
+    fl = _by_floor(P.floor_loops(doc, 0.30))
+    check(approx(fl[2][0]["area_m2"], 12.6 * 8.6, 0.05), fl[2][0]["area_m2"])
+    check(len(fl[3]) == 1 and approx(fl[3][0]["area_m2"], 12.6 * 8.6, 0.05), fl[3])
+
+
+@test("proto")
+def test_floor_loops_open_chain_uses_rooms(tmp):
+    import prototype as P
+    walls = _rect_walls(2, 0, 0, 10, 8)[:3]                       # bir dis duvar eksik
+    doc = P.tidy(_proto_doc(walls, {2: 0.0}, rooms=[_room(2, 0, 0, 10, 8)]))
+    fl = P.floor_loops(doc, 0.30)
+    check(len(fl) == 1 and approx(fl[0]["area_m2"], 10.6 * 8.6, 0.1), fl)
+
+
+@test("proto")
+def test_floor_loops_closes_gaps_between_rooms(tmp):
+    import prototype as P
+    rooms = [_room(2, 0, 0, 4.9, 8, "A"), _room(2, 5.1, 0, 10, 8, "B")]   # 20 cm ic duvar
+    doc = P.tidy(_proto_doc([], {2: 0.0}, rooms=rooms))
+    fl = P.floor_loops(doc, 0.0)
+    check(len(fl) == 1 and approx(fl[0]["area_m2"], 80.0, 0.1), fl)
+
+
+@test("proto")
+def test_floor_loops_level_without_walls(tmp):
+    import prototype as P
+    doc = P.tidy(_proto_doc(_rect_walls(2, 0, 0, 10, 8), {2: 0.0, 3: 3.0}))
+    warnings = []
+    fl = _by_floor(P.floor_loops(doc, 0.30, warnings))
+    check(set(fl) == {2, 3}, fl.keys())
+    check(approx(fl[3][0]["area_m2"], fl[2][0]["area_m2"], 1e-6))
+    one = P.tidy(_proto_doc([], {2: 0.0}))
+    check(P.floor_loops(one, 0.30, warnings) == [] and any("Kat 2" in w for w in warnings),
+          warnings)
+
+
+@test("proto")
+def test_floor_loops_cli(tmp):
+    import json
+    import subprocess
+    import prototype as P
+    doc = P.tidy(_proto_doc(_rect_walls(2, 0, 0, 10, 8), {2: 0.0}))
+    src, out = tmp / "p.json", tmp / "f.json"
+    src.write_text(json.dumps(doc), "utf-8")
+    proc = subprocess.run([sys.executable, str(HERE / "prototype_floors.py"), "--json", str(src),
+                           "--exterior-thickness-m", "0.3", "--output", str(out)],
+                          capture_output=True, text=True)
+    check(proc.returncode == 0, proc.stderr[-500:])
+    j = json.loads(out.read_text("utf-8"))
+    check(len(j["floors"]) == 1 and j["warnings"] == [], j)
+    bad = subprocess.run([sys.executable, str(HERE / "prototype_floors.py"), "--json",
+                          str(tmp / "yok.json"), "--exterior-thickness-m", "0.3",
+                          "--output", str(out)], capture_output=True, text=True)
+    check(bad.returncode == 1 and "HATA:" in bad.stderr, bad.stderr[-300:])
+
+
 # --------------------------------------------------------------------------
 
 def main(argv=None) -> int:

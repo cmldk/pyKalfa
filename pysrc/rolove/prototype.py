@@ -306,3 +306,90 @@ def tidy(doc: dict) -> dict:
     doc["prototype"] = info
     doc.setdefault("params", {})["prototype"] = params()
     return doc
+
+
+# --------------------------------------------------------------------------
+# Dosemeler
+# --------------------------------------------------------------------------
+
+LINE_EXTEND_M = 0.05        # polygonize icin dis duvar hatlari uclardan uzatilir
+ROOM_CLOSE_M = 0.15         # oda araliklari (ic duvar) bu kadar kapatilir
+MIN_SLAB_M2 = 0.5
+SQFT_TO_M2 = 0.3048 * 0.3048
+_MITRE = 2                  # shapely JOIN_STYLE.mitre
+
+
+def _extended(w, d):
+    (x1, y1), (x2, y2) = _line(w)
+    ux, uy = geom2d.seg_dir(_line(w))
+    return ((x1 - ux * d, y1 - uy * d), (x2 + ux * d, y2 + uy * d))
+
+
+def footprint(doc, floor, exterior_thickness_m):
+    """Katin ayak izi (shapely, feet): dis duvar ic yuz hatlarindan kapanan
+    poligonlar + bunlarin disinda kalan odalar (ic duvar araliklari
+    kapatilmis), dis duvar kalinligi kadar disa genisletilmis."""
+    from shapely.geometry import LineString, Polygon
+    from shapely.ops import polygonize, unary_union
+
+    ext = [w for w in doc.get("walls") or []
+           if w["floor"] == floor and w["side"] == "exterior" and _length(w) > 1e-9]
+    lines = [LineString(_extended(w, LINE_EXTEND_M * config.FT)) for w in ext]
+    primary = unary_union(list(polygonize(unary_union(lines)))) if lines else Polygon()
+
+    rooms = []
+    for r in doc.get("rooms") or []:
+        if r["floor"] != floor or len(r.get("polygon_ft") or []) < 3:
+            continue
+        poly = Polygon(r["polygon_ft"]).buffer(0)
+        if poly.is_empty:
+            continue
+        if primary.is_empty or not primary.contains(poly.representative_point()):
+            rooms.append(poly)
+    parts = [primary]
+    if rooms:
+        c = ROOM_CLOSE_M * config.FT
+        parts.append(unary_union([p.buffer(c, join_style=_MITRE) for p in rooms])
+                     .buffer(-c, join_style=_MITRE))
+    geom = unary_union([p for p in parts if not p.is_empty]) if any(
+        not p.is_empty for p in parts) else Polygon()
+    if geom.is_empty or exterior_thickness_m <= 0:
+        return geom
+    return geom.buffer(exterior_thickness_m * config.FT, join_style=_MITRE)
+
+
+def _ring(coords):
+    pts = [[float(x), float(y)] for x, y in coords]
+    if len(pts) > 1 and pts[0] == pts[-1]:
+        pts = pts[:-1]
+    return pts
+
+
+def floor_loops(doc, exterior_thickness_m, warnings=None) -> list:
+    """Level basina doseme: kendi izi U kotca hemen altindaki katin izi.
+    Her parca {"id", "floor", "loops_ft" (dis halka + delikler), "area_m2"}."""
+    import shapely
+    from shapely.ops import unary_union
+
+    levels = sorted(doc.get("levels") or [], key=lambda lv: (lv["elevation_m"], lv["floor"]))
+    prints = {lv["floor"]: footprint(doc, lv["floor"], exterior_thickness_m) for lv in levels}
+    out = []
+    for i, lv in enumerate(levels):
+        f = lv["floor"]
+        geoms = [prints[f]] + ([prints[levels[i - 1]["floor"]]] if i > 0 else [])
+        geoms = [g for g in geoms if not g.is_empty]
+        if not geoms:
+            if warnings is not None:
+                warnings.append("Kat {}: doseme cikarilamadi (dis duvar ve oda yok)".format(f))
+            continue
+        geom = shapely.set_precision(unary_union(geoms), 0.001 * config.FT)
+        polys = list(getattr(geom, "geoms", [geom]))
+        polys = [p for p in polys if p.geom_type == "Polygon"
+                 and p.area * SQFT_TO_M2 >= MIN_SLAB_M2]
+        polys.sort(key=lambda p: -p.area)
+        for k, p in enumerate(polys):
+            out.append({"id": "{}floor-{}-{}".format(ID_PREFIX, f, k), "floor": f,
+                        "loops_ft": [_ring(p.exterior.coords)] +
+                                    [_ring(h.coords) for h in p.interiors],
+                        "area_m2": round(p.area * SQFT_TO_M2, 3)})
+    return out
