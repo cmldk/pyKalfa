@@ -13,6 +13,7 @@ geometrisi, kat planı DXF'inden de gerçek duvarlar üretir.
 | **Parsel/Bina GIS** | Valonya'da adres veya CaPaKey ile SPW geoportalından parsel sınırlarını, binaları ve parsel numaralarını alıp Parsel/Bina Aktar ile aynı stillerle çizer. OCR ve görsel gerekmez. |
 | **Duvar Aktar** | Kat planı DXF'indeki duvarları gerçek Revit `Wall` elemanlarına dönüştürür. |
 | **Rölöve Aktar** | Polycam taramasından boş projeye hızlı rölöve: ölçülen kat kotları, taranan yüzlere oturtulmuş duvarlar, kapı/pencere ve adlı odalar. |
+| **Rölöve Prototip** | Aynı Polycam taramasından toparlanmış, döşemeli hızlı prototip: dik köşeler, katlar arası hizalı dış duvarlar, her katta döşeme. |
 
 ## Gereksinimler
 
@@ -192,6 +193,34 @@ kotlar 1 cm'ye yuvarlanır; konumlar yuvarlanmaz.
 Butonu aynı projede tekrar çalıştırmak güvenlidir: daha önce oluşturulan
 elemanlar (taşınmış olsalar bile) korunur, sildikleriniz geri gelmez,
 yalnız eksikler eklenir.
+
+### Rölöve Prototip
+
+Rölöve Aktar ile **aynı girdilerden** (Input 1–4), ölçü belgesi değil
+**hızlı bir başlangıç kütlesi** üretir: kat duvarları havada durmaz, bina
+döşemeleriyle tek parça görünür. İnce ölçüler sonradan elle düzeltilir.
+
+- **Toparlama:** neredeyse dik köşeler (5°'ye kadar) 90°'ye, katlar arası
+  birbirine 15 cm'den yakın dış duvarlar aynı hatta oturur. Daha eğik
+  duvarlar olduğu gibi kalır.
+- **Döşeme:** her katın Level'ına bir döşeme (tipini siz seçersiniz); üst
+  yüzü kat kotunda, dış duvarın dış yüzüne kadar. Bir katın döşemesi o
+  katın ve altındaki katın izini örter (üstü açık kalan kısım düz çatı
+  varsayılır).
+- **Duvarlar** üst katın Level'ına bağlanır ve döşemenin altında biter;
+  en üst katın duvarları taranan yükseklikte kalır. Döşeme tipini
+  sonradan değiştirirseniz duvarların üst ofsetini de güncelleyin.
+- Yerinden oynayan duvarlar `pyKalfa Tarama Durumu` = **duzeltildi**
+  taşır; sapma (cm) taramadan ne kadar uzaklaştığını gösterir.
+- Çatı, merdiven ve merdiven boşluğu yok.
+- **Rölöve Aktar ile aynı projede kullanmayın** (iki bina üst üste
+  gelir); buton böyle bir projede uyarır.
+
+1. Boş bir proje açın, **pyKalfa** → **Duvar** → **Rolove Prototip**.
+2. Girdileri Rölöve Aktar'daki gibi seçin; özet penceresi toparlama
+   sayılarını gösterir. Kat başına `prototip_preview_katN.png` yazılır.
+3. Dış/iç duvar tipleri, kapı/pencere ve **döşeme tipi** seçilir; işlem tek
+   **Ctrl+Z** ile geri alınabilir.
 
 ## Lisans
 

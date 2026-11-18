@@ -13,6 +13,7 @@ cadastral images, and real walls from floor plan DXF files.
 | **Parsel/Bina GIS** | In Wallonia, fetches parcel boundaries, buildings and parcel numbers from the SPW geoportal by address or CaPaKey and draws them with the same styles as Parsel/Bina Aktar. No images or OCR needed. |
 | **Duvar Aktar** | Converts walls in a floor plan DXF into real Revit `Wall` elements. |
 | **Rölöve Aktar** | Quick as-built model from a Polycam scan into an empty project: measured levels, walls fitted to the scanned faces, doors/windows and named rooms. |
+| **Rölöve Prototip** | Tidied, floored quick prototype from the same Polycam scan: square corners, exterior walls aligned between storeys, a floor slab on every level. |
 
 ## Requirements
 
@@ -195,6 +196,34 @@ it). Use a view filter to colour them. Dimensions round to the nearest
 Running the button again in the same project is safe: elements created
 earlier are kept (even if moved), ones you deleted do not come back, and
 only missing ones are added.
+
+### Rölöve Prototip — tidied prototype with floors
+
+Uses the **same inputs** as Rölöve Aktar (Input 1–4) to build a **quick
+starting massing**, not a survey: storeys no longer float, the building
+stands on its floor slabs. Fine dimensions are corrected by hand later.
+
+- **Tidying:** nearly square corners (up to 5°) become 90°, exterior walls
+  closer than 15 cm between storeys snap onto one line. More skewed walls
+  are left as scanned.
+- **Floors:** one slab per level (you pick the type); top face at the
+  level, out to the exterior face of the exterior walls. A level's slab
+  covers that storey and the storey below it (an uncovered part is
+  assumed to be a flat roof).
+- **Walls** are attached to the next level and stop under its slab; the
+  top storey's walls keep the scanned height. If you change the floor type
+  later, update the walls' top offset too.
+- Moved walls carry `pyKalfa Tarama Durumu` = **duzeltildi**; the deviation
+  (cm) says how far they moved from the scan.
+- No roof, stairs or stair openings.
+- **Do not use it in the same project as Rölöve Aktar** (two buildings on
+  top of each other); the button warns in such a project.
+
+1. Open an empty project, **pyKalfa** → **Duvar** → **Rolove Prototip**.
+2. Pick the inputs as for Rölöve Aktar; the summary shows the tidying
+   counts. A `prototip_preview_katN.png` is written per storey.
+3. Pick exterior/interior wall types, doors/windows and the **floor
+   type**; one **Ctrl+Z** undoes everything.
 
 ## License
 

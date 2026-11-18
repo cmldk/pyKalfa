@@ -14,6 +14,7 @@ de fichiers DXF de plans d'étage.
 | **Parsel/Bina GIS** | En Wallonie, récupère les limites de parcelles, les bâtiments et les numéros de parcelles depuis le géoportail du SPW à partir d'une adresse ou d'un CaPaKey, et les dessine avec les mêmes styles que Parsel/Bina Aktar. Ni images ni OCR. |
 | **Duvar Aktar** | Convertit les murs d'un plan d'étage DXF en véritables éléments `Wall` de Revit. |
 | **Rölöve Aktar** | Relevé rapide depuis un scan Polycam dans un projet vide : niveaux mesurés, murs calés sur les faces scannées, portes/fenêtres et pièces nommées. |
+| **Rölöve Prototip** | Prototype rapide, nettoyé et avec dalles, depuis le même scan Polycam : angles droits, murs extérieurs alignés d'un étage à l'autre, une dalle par niveau. |
 
 ## Prérequis
 
@@ -212,6 +213,37 @@ sont pas arrondies.
 Relancer le bouton dans le même projet est sans risque : les éléments
 déjà créés sont conservés (même déplacés), ceux que vous avez supprimés
 ne reviennent pas, seuls les manquants sont ajoutés.
+
+### Rölöve Prototip — prototype nettoyé avec dalles
+
+Utilise **les mêmes entrées** que Rölöve Aktar (Input 1–4) pour produire
+une **volumétrie de départ rapide**, pas un relevé : les étages ne flottent
+plus, le bâtiment repose sur ses dalles. Les cotes fines se corrigent
+ensuite à la main.
+
+- **Nettoyage :** les angles presque droits (jusqu'à 5°) passent à 90°, les
+  murs extérieurs à moins de 15 cm d'un étage à l'autre sont alignés sur
+  une même ligne. Les murs plus inclinés restent tels que scannés.
+- **Dalles :** une dalle par niveau (type au choix) ; face supérieure au
+  niveau, jusqu'à la face extérieure des murs extérieurs. La dalle d'un
+  niveau couvre cet étage et celui du dessous (une partie non couverte est
+  supposée être un toit plat).
+- **Les murs** sont attachés au niveau supérieur et s'arrêtent sous sa
+  dalle ; les murs du dernier étage gardent la hauteur scannée. Si vous
+  changez ensuite le type de dalle, mettez aussi à jour le décalage
+  supérieur des murs.
+- Les murs déplacés portent `pyKalfa Tarama Durumu` = **duzeltildi** ;
+  l'écart (cm) indique de combien ils s'éloignent du scan.
+- Pas de toiture, d'escalier ni de trémie.
+- **Ne l'utilisez pas dans le même projet que Rölöve Aktar** (deux
+  bâtiments superposés) ; le bouton avertit dans ce cas.
+
+1. Ouvrez un projet vide, **pyKalfa** → **Duvar** → **Rolove Prototip**.
+2. Choisissez les entrées comme pour Rölöve Aktar ; le résumé affiche les
+   chiffres du nettoyage. Un `prototip_preview_katN.png` est écrit par
+   étage.
+3. Choisissez les types de murs, portes/fenêtres et le **type de dalle** ;
+   un seul **Ctrl+Z** annule tout.
 
 ## Licence
 
