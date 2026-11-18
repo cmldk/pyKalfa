@@ -45,7 +45,7 @@ from Autodesk.Revit.DB import (
 from Autodesk.Revit.DB.Structure import StructuralType
 from pyrevit import script
 
-from pykalfa.revitutils import WarningSwallower, elem_name
+from pykalfa.revitutils import WarningSwallower, WarningSwallowerUnjoin, elem_name
 from pykalfa.rolove import ledger as ledger_mod
 from pykalfa.rolove import params, storage
 
@@ -72,12 +72,33 @@ class Choices(object):
     """Kullanici secimleri (ui.pick_choices doldurur)."""
 
     def __init__(self, exterior_type, group_types, door_symbol=None, window_symbol=None,
-                 level_overrides=None):
+                 level_overrides=None, floor_type=None):
         self.exterior_type = exterior_type
         self.group_types = group_types or {}
         self.door_symbol = door_symbol
         self.window_symbol = window_symbol
         self.level_overrides = level_overrides or {}
+        # Yalniz Rolove Prototip: doseme tipi. None = doseme yok, duvarlar
+        # eskisi gibi baglantisiz (Rolove Aktar davranisi).
+        self.floor_type = floor_type
+
+    @property
+    def floor_thickness_ft(self):
+        return floor_type_thickness_ft(self.floor_type)
+
+
+def floor_type_thickness_ft(floor_type):
+    """Doseme tipinin toplam kalinligi (feet); tip yoksa 0."""
+    if floor_type is None:
+        return 0.0
+    try:
+        cs = floor_type.GetCompoundStructure()
+        if cs is not None:
+            return float(cs.GetWidth())
+    except Exception:  # noqa: BLE001 - parametreye dus
+        pass
+    p = floor_type.get_Parameter(BuiltInParameter.FLOOR_ATTR_DEFAULT_THICKNESS_PARAM)
+    return float(p.AsDouble()) if p is not None else 0.0
 
 
 class Report(object):
@@ -278,6 +299,7 @@ def _create_wall(ctx, w, level):
             bounding.Set(1)
         params.set_values(wall, ctx.param_names, w["status"], w.get("deviation_cm"),
                           w.get("measured_thickness_cm"))
+        _constrain_top(ctx, w, wall)
     except Exception:
         try:
             ctx.doc.Delete(wall.Id)
@@ -285,6 +307,26 @@ def _create_wall(ctx, w, level):
             pass
         raise
     return wall
+
+
+def _constrain_top(ctx, w, wall):
+    """Prototip: JSON'da `top_floor` varsa ve doseme tipi secildiyse duvarin
+    ustu ust katin Level'ina baglanir, doseme kalinligi kadar asagida biter.
+    Ust Level yoksa (silinmis) duvar baglantisiz kalir ve rapora yazilir."""
+    top = w.get("top_floor")
+    if top is None or ctx.choices.floor_type is None:
+        return
+    level = ctx.levels.get(top)
+    if level is None:
+        ctx.report.warnings.append("Duvar {}: ust katin Level'i yok; duvar baglantisiz "
+                                   "birakildi".format(w["id"]))
+        return
+    try:
+        wall.get_Parameter(BuiltInParameter.WALL_HEIGHT_TYPE).Set(level.Id)
+        wall.get_Parameter(BuiltInParameter.WALL_TOP_OFFSET).Set(-ctx.choices.floor_thickness_ft)
+    except Exception as ex:  # noqa: BLE001 - duvar yine de taranan yukseklikte kalir
+        ctx.report.warnings.append("Duvar {}: ust Level'a baglanamadi ({}); taranan "
+                                   "yukseklikte birakildi".format(w["id"], ex))
 
 
 def _check_wall(ctx, w, wall):
@@ -571,7 +613,11 @@ def create_all(doc, app, data, choices):
         ("odalar", lambda: _stage_rooms(ctx)),
         ("defter", lambda: _stage_ledger(ctx)),
     )
-    group = TransactionGroup(doc, "pyKalfa: Rolove Aktar")
+    if data.get("floors") and choices.floor_type is not None:
+        from pykalfa.rolove import floors as floors_mod
+        stages = stages[:4] + (("doseme", lambda: floors_mod.stage_floors(ctx)),) + stages[4:]
+    title = "Rolove Prototip" if data.get("prototype") else "Rolove Aktar"
+    group = TransactionGroup(doc, "pyKalfa: {}".format(title))
     group.Start()
     try:
         for name, fn in stages:
@@ -580,6 +626,12 @@ def create_all(doc, app, data, choices):
                 logger.info("Rolove asamasi tamam: {}".format(name))
                 continue
             t = _transaction(doc, "pyKalfa Rolove: {}".format(name))
+            if name == "doseme":
+                # Doseme-duvar otomatik birlesimi "Can't keep elements joined"
+                # verebilir: birlesim kaldirilarak cozulur (geometri ayni).
+                opts = t.GetFailureHandlingOptions()
+                opts.SetFailuresPreprocessor(WarningSwallowerUnjoin())
+                t.SetFailureHandlingOptions(opts)
             t.Start()
             try:
                 fn()
@@ -606,7 +658,8 @@ def preview_plan(doc, data):
     led = storage.get_ledger(doc)
     items = led["items"]
     existing = set(uid for uid in items.values() if _alive(doc, uid))
-    ids = [x["id"] for k in ("levels", "walls", "openings", "rooms") for x in data.get(k, [])]
+    ids = [x["id"] for k in ("levels", "walls", "openings", "rooms", "floors")
+           for x in data.get(k, [])]
     plan = ledger_mod.plan_actions(ids, items, existing)
     key = (data.get("source") or {}).get("key")
     other = [s for s in led["sources"] if s != key]

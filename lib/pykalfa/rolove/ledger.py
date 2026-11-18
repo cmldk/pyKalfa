@@ -58,3 +58,9 @@ def plan_actions(item_ids, ledger_items, existing_unique_ids):
         else:
             result["deleted"].append(sid)
     return result
+
+
+def foreign_items(items, prefix):
+    """`prefix` ile BASLAMAYAN kararli id'ler, sirali (ör. Rolove Prototip
+    icin: ayni projedeki Rolove Aktar elemanlari)."""
+    return sorted(k for k in items if not k.startswith(prefix))

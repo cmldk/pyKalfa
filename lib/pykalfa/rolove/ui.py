@@ -242,9 +242,9 @@ def _status_text(status):
     return status or ""
 
 
-def show_report(report, data, output):
-    kinds = ("level", "wall", "door", "window", "opening", "room")
-    output.print_md("## Rolove Aktar - sonuc")
+def show_report(report, data, output, title="Rolove Aktar",
+                kinds=("level", "wall", "door", "window", "opening", "room")):
+    output.print_md("## {} - sonuc".format(title))
     output.print_table(
         table_data=[[k, report.count("created", k), report.count("kept", k),
                      report.count("deleted", k), report.count("failed", k)] for k in kinds],
@@ -286,4 +286,4 @@ def show_report(report, data, output):
         "Revit suresi {:.1f} s. Ayrinti pyRevit cikti penceresinde.".format(
             len(report.created), len(report.kept), len(report.deleted), len(report.failed),
             report.seconds),
-        title="Rolove Aktar - sonuc")
+        title="{} - sonuc".format(title))

@@ -741,6 +741,14 @@ def test_plan_actions_respects_deleted(tmp):
     check(r == {"create": ["c"], "keep": ["a"], "deleted": ["b"]}, r)
 
 
+@test("ledger")
+def test_foreign_items(tmp):
+    ledger = _ledger()
+    items = {"p-a": "u1", "abc": "u2", "p-b": "u3", "def": "u4"}
+    check(ledger.foreign_items(items, "p-") == ["abc", "def"], ledger.foreign_items(items, "p-"))
+    check(ledger.foreign_items({}, "p-") == [])
+
+
 def _inputs():
     _ledger()                                   # lib/pykalfa/rolove sys.path'e
     import inputs
