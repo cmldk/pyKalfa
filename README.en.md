@@ -3,7 +3,7 @@
 [Türkçe](README.md) · **English** · [Français](README.fr.md)
 
 A pyRevit extension for Revit. Extracts parcel and building geometry from
-cadastral images, and real walls from floor plan DXF files.
+cadastral data, and builds a floored building prototype from a Polycam scan.
 
 ## Features
 
@@ -11,8 +11,6 @@ cadastral images, and real walls from floor plan DXF files.
 | --- | --- |
 | **Parsel/Bina Aktar** | Turns cadastral images (PNG) into Revit geometry: parcel boundaries as `DetailLine`, buildings as `FilledRegion`, parcel numbers as `TextNote`. |
 | **Parsel/Bina GIS** | In Wallonia, fetches parcel boundaries, buildings and parcel numbers from the SPW geoportal by address or CaPaKey and draws them with the same styles as Parsel/Bina Aktar. No images or OCR needed. |
-| **Duvar Aktar** | Converts walls in a floor plan DXF into real Revit `Wall` elements. |
-| **Rölöve Aktar** | Quick as-built model from a Polycam scan into an empty project: measured levels, walls fitted to the scanned faces, doors/windows and named rooms. |
 | **Rölöve Prototip** | Tidied, floored quick prototype from the same Polycam scan: square corners, exterior walls aligned between storeys, a floor slab on every level. |
 
 ## Requirements
@@ -136,29 +134,11 @@ parcel's cadastral attributes.
 > Source: Plan parcellaire cadastral © AGDP/SPF Finances, via SPW ;
 > Bâtiments, voirie © SPW (PICC_VDIFF).
 
-### Duvar Aktar — walls from DXF
+### Rölöve Prototip — building prototype from a Polycam scan
 
-1. Switch to a **plan view** for the level where the walls belong.
-2. **pyKalfa** → **Duvar** → **Duvar Aktar**.
-3. Then:
-   - select the **DXF file**
-   - *(if needed)* confirm the drawing units, moving the drawing to the
-     origin, or single-line mode
-   - choose the **layer** — the tool suggests the most likely wall
-     layer. Doors and windows are drawn exactly like walls, so the layer
-     is the only thing that separates them; this step matters
-   - set the **wall height** and pick a **Level** and **Wall Type**
-4. Confirm, and when it finishes you get the number of created and
-   failed walls plus the total length.
-
-> The whole import is a single transaction: if you do not like the
-> result, a single **Ctrl+Z** in Revit undoes all of it.
-
-### Rölöve Aktar — as-built model from a Polycam scan
-
-Builds a quick starting model from a Polycam (iPhone/iPad LiDAR) scan.
-The goal is a trustworthy survey: dimensions come from the scan, and
-anything uncertain is flagged rather than invented.
+Builds a **quick starting massing** from a Polycam (iPhone/iPad LiDAR) scan
+into an empty project: walls, floor slabs, doors/windows and named rooms.
+It is not a survey; fine dimensions are corrected by hand later.
 
 **Required inputs** (Polycam Basic plan):
 
@@ -171,59 +151,40 @@ anything uncertain is flagged rather than invented.
 
 Polycam's OBJ (mesh) zip is not Input 1; it contains no DXF.
 
-1. Open an empty project (the Architectural template is fine).
-2. **pyKalfa** → **Duvar** → **Rolove Aktar** and pick **Input 1**.
-   Inputs 2–4 with the same name in the same folder are suggested; the
-   inputs window marks each one `OK` / `EKSIK` (missing), and any wrong or
-   missing one can be picked with "Input N sec / degistir" (names need
-   not match).
-3. Preparation takes a few seconds (~5 s for the 4-storey sample). The
-   summary shows the levels (main floor = 0.00), whether each floor
-   aligned to the scan, and the wall statuses; levels can be edited. A
-   PNG preview per floor is written to `output/`.
-4. Pick the exterior wall type **once**, one type per interior thickness
-   group, and the door and window families (or "Opening kullan").
-5. Levels are named `Kat N (Scan)`; walls are created on their floor's
-   level. Exterior walls grow **outward from the scanned interior face**
-   (Location Line = Finish Face: Interior).
-
-Every wall/door/window carries a `pyKalfa Tarama Durumu` parameter:
-**olculdu** (measured from the LAZ), **duzeltildi** (DXF position
-corrected from the scan), **varsayildi** (default or unverified — check
-it). Use a view filter to colour them. Dimensions round to the nearest
-5 cm and levels to 1 cm; positions are not rounded.
-
-Running the button again in the same project is safe: elements created
-earlier are kept (even if moved), ones you deleted do not come back, and
-only missing ones are added.
-
-### Rölöve Prototip — tidied prototype with floors
-
-Uses the **same inputs** as Rölöve Aktar (Input 1–4) to build a **quick
-starting massing**, not a survey: storeys no longer float, the building
-stands on its floor slabs. Fine dimensions are corrected by hand later.
-
+- **Measurement:** each storey's walls are fitted to the scan and levels
+  are measured from it (main floor = 0.00).
 - **Tidying:** nearly square corners (up to 5°) become 90°, exterior walls
   closer than 15 cm between storeys snap onto one line. More skewed walls
-  are left as scanned.
+  are left as scanned; corners closed in the scan stay closed.
 - **Floors:** one slab per level (you pick the type); top face at the
   level, out to the exterior face of the exterior walls. A level's slab
   covers that storey and the storey below it (an uncovered part is
   assumed to be a flat roof).
 - **Walls** are attached to the next level and stop under its slab; the
-  top storey's walls keep the scanned height. If you change the floor type
+  top storey's walls keep the scanned height. Exterior walls grow
+  **outward from the scanned interior face**. If you change the floor type
   later, update the walls' top offset too.
-- Moved walls carry `pyKalfa Tarama Durumu` = **duzeltildi**; the deviation
-  (cm) says how far they moved from the scan.
 - No roof, stairs or stair openings.
-- **Do not use it in the same project as Rölöve Aktar** (two buildings on
-  top of each other); the button warns in such a project.
 
-1. Open an empty project, **pyKalfa** → **Duvar** → **Rolove Prototip**.
-2. Pick the inputs as for Rölöve Aktar; the summary shows the tidying
-   counts. A `prototip_preview_katN.png` is written per storey.
-3. Pick exterior/interior wall types, doors/windows and the **floor
-   type**; one **Ctrl+Z** undoes everything.
+1. Open an empty project (the Architectural template is fine).
+2. **pyKalfa** → **Duvar** → **Rolove Prototip** and pick **Input 1**.
+   Inputs 2–4 with the same name in the same folder are suggested; the
+   inputs window marks each one `OK` / `EKSIK` (missing), and any wrong or
+   missing one can be picked with "Input N sec / degistir".
+3. The summary shows the levels and the tidying counts; levels can be
+   edited. A `prototip_preview_katN.png` is written per storey.
+4. Pick the exterior wall type **once**, one type per interior thickness
+   group, the door and window families (or "Opening kullan") and the
+   **floor type**. One **Ctrl+Z** undoes everything.
+
+Every wall/door/window carries a `pyKalfa Tarama Durumu` parameter:
+**olculdu** (measured from the scan), **duzeltildi** (position corrected
+from the scan or by tidying; the deviation is stored in cm), **varsayildi**
+(default or unverified — check it). Use a view filter to colour them.
+
+Running the button again in the same project is safe: elements created
+earlier are kept, ones you deleted do not come back, and only missing ones
+are added.
 
 ## License
 

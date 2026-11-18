@@ -1,8 +1,10 @@
 title: Rolove Prototip
 tooltip: >
-  Polycam taramasindan toparlanmis, dosemeli hizli prototip: neredeyse dik
-  koseler 90 dereceye, katlar arasi dis duvarlar ayni hatta oturur; her
-  kata doseme eklenir, duvarlar ust katin Level'ina baglanip dosemenin
-  altinda biter. Girdiler Rolove Aktar ile ayni. Olculen rolove degildir:
-  yerinden oynayan duvarlar "duzeltildi" isaretlenir, ince olculer sonradan
-  elle duzeltilir. Rolove Aktar ile ayni projede kullanmayin.
+  Polycam taramasindan bos projeye toparlanmis, dosemeli hizli prototip:
+  neredeyse dik koseler 90 dereceye, katlar arasi dis duvarlar ayni hatta
+  oturur; her kata doseme eklenir, duvarlar ust katin Level'ina baglanip
+  dosemenin altinda biter; kapi/pencere ve adli odalar. Gereken 4 Polycam
+  ciktisi ayni klasorde ayni adla: kat plani DXF + CSV (Floor plan; zip de
+  secilebilir), georef'i KAPALI LAS/LAZ nokta bulutu ve GLB mesh. Olculen
+  rolove degildir: yerinden oynayan duvarlar "duzeltildi" isaretlenir,
+  ince olculer sonradan elle duzeltilir.

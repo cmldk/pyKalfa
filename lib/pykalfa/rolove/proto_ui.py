@@ -37,7 +37,7 @@ def summary_text(data, plan, conflict_count, slabs=None):
     proto = data.get("prototype") or {}
     lines = []
     if conflict_count:
-        lines.append("UYARI: Bu projede Rolove Aktar ile olusturulmus {} eleman var. Prototip "
+        lines.append("UYARI: Bu projede eski Rolove Aktar ile olusturulmus {} eleman var. Prototip "
                      "onlarin USTUNE ikinci bir bina olusturur; ayri bir projede "
                      "calistirmaniz onerilir.".format(conflict_count))
         lines.append("")

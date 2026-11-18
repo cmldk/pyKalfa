@@ -3,8 +3,8 @@
 [Türkçe](README.md) · [English](README.en.md) · **Français**
 
 Une extension pyRevit pour Revit. Elle extrait la géométrie des parcelles
-et des bâtiments à partir d'images cadastrales, et de vrais murs à partir
-de fichiers DXF de plans d'étage.
+et des bâtiments à partir de données cadastrales, et produit un prototype
+de bâtiment avec dalles à partir d'un scan Polycam.
 
 ## Fonctionnalités
 
@@ -12,8 +12,6 @@ de fichiers DXF de plans d'étage.
 | --- | --- |
 | **Parsel/Bina Aktar** | Convertit des images cadastrales (PNG) en géométrie Revit : limites de parcelles en `DetailLine`, bâtiments en `FilledRegion`, numéros de parcelles en `TextNote`. |
 | **Parsel/Bina GIS** | En Wallonie, récupère les limites de parcelles, les bâtiments et les numéros de parcelles depuis le géoportail du SPW à partir d'une adresse ou d'un CaPaKey, et les dessine avec les mêmes styles que Parsel/Bina Aktar. Ni images ni OCR. |
-| **Duvar Aktar** | Convertit les murs d'un plan d'étage DXF en véritables éléments `Wall` de Revit. |
-| **Rölöve Aktar** | Relevé rapide depuis un scan Polycam dans un projet vide : niveaux mesurés, murs calés sur les faces scannées, portes/fenêtres et pièces nommées. |
 | **Rölöve Prototip** | Prototype rapide, nettoyé et avec dalles, depuis le même scan Polycam : angles droits, murs extérieurs alignés d'un étage à l'autre, une dalle par niveau. |
 
 ## Prérequis
@@ -147,103 +145,63 @@ attributs cadastraux de la parcelle.
 > Source : Plan parcellaire cadastral © AGDP/SPF Finances, via SPW ;
 > Bâtiments, voirie © SPW (PICC_VDIFF).
 
-### Duvar Aktar — murs à partir d'un DXF
+### Rölöve Prototip — prototype de bâtiment depuis un scan Polycam
 
-1. Placez-vous dans une **vue en plan** correspondant au niveau des
-   murs.
-2. **pyKalfa** → **Duvar** → **Duvar Aktar**.
-3. Ensuite :
-   - sélectionnez le **fichier DXF**
-   - *(si nécessaire)* confirmez l'unité du dessin, le recentrage vers
-     l'origine ou le mode ligne simple
-   - choisissez le **calque** — l'outil propose le calque de murs le
-     plus probable. Les portes et fenêtres étant dessinées exactement
-     comme les murs, seul le calque permet de les distinguer : cette
-     étape est importante
-   - indiquez la **hauteur de mur**, puis choisissez un **Level** et un
-     **Wall Type**
-4. Validez ; à la fin, le nombre de murs créés et échoués ainsi que la
-   longueur totale s'affichent.
+Produit une **volumétrie de départ rapide** à partir d'un scan Polycam
+(LiDAR iPhone/iPad) dans un projet vide : murs, dalles, portes/fenêtres et
+pièces nommées. Ce n'est pas un relevé ; les cotes fines se corrigent
+ensuite à la main.
 
-> L'import complet forme une seule transaction : si le résultat ne vous
-> convient pas, un simple **Ctrl+Z** dans Revit annule tout.
-
-### Rölöve Aktar — relevé depuis un scan Polycam
-
-Produit un modèle de départ rapide à partir d'un scan Polycam (LiDAR
-iPhone/iPad). L'objectif est un relevé fiable : les cotes viennent du
-scan, ce qui est incertain est signalé, pas inventé.
-
-**Entrées requises** (offre Polycam Basic) :
+**Entrées nécessaires** (abonnement Polycam Basic) :
 
 | Entrée | Fichier | Dans Polycam |
 |---|---|---|
-| **Input 1** – Plan d'étage | `.dxf` (ou le `.zip` du plan) | Floor plan → DXF |
-| **Input 2** – Liste des pièces | `.csv` (pris dans le zip du plan s'il y est) | Floor plan → CSV |
+| **Input 1** – Plan d'étage | `.dxf` (ou le `.zip` du plan d'étage) | Floor plan → DXF |
+| **Input 2** – Liste des pièces | `.csv` (repris du zip du plan s'il s'y trouve) | Floor plan → CSV |
 | **Input 3** – Nuage de points | `.laz` / `.las` — **géoréférencement désactivé** | Point cloud → LAS |
 | **Input 4** – Modèle 3D | `.glb` | Mesh → GLTF |
 
-Le zip OBJ (mesh) de Polycam n'est pas l'Input 1 : il ne contient pas de DXF.
+Le zip OBJ (maillage) de Polycam n'est pas l'Input 1 ; il ne contient pas
+de DXF.
 
-1. Ouvrez un projet vide (le gabarit Architectural suffit).
-2. **pyKalfa** → **Duvar** → **Rolove Aktar** et choisissez l'**Input 1**.
-   Les Inputs 2–4 du même nom dans le même dossier sont proposés ; la
-   fenêtre des entrées marque chacun `OK` / `EKSIK` (manquant), et une
-   entrée fausse ou manquante se choisit avec « Input N sec / degistir »
-   (les noms n'ont pas à correspondre).
-3. La préparation prend quelques secondes (~5 s pour l'exemple de 4
-   niveaux). Le résumé affiche les niveaux (étage principal = 0.00), le
-   calage de chaque étage sur le scan et l'état des murs ; les niveaux
-   sont modifiables. Un aperçu PNG par étage est écrit dans `output/`.
-4. Choisissez le type de mur extérieur **une fois**, un type par groupe
-   d'épaisseur intérieure, puis les familles de portes et de fenêtres
-   (ou « Opening kullan »).
-5. Les niveaux s'appellent `Kat N (Scan)` ; chaque mur est créé sur le
-   niveau de son étage. Les murs extérieurs s'épaississent **vers
-   l'extérieur depuis la face intérieure scannée** (Location Line =
-   Finish Face: Interior).
-
-Chaque mur/porte/fenêtre porte le paramètre `pyKalfa Tarama Durumu` :
-**olculdu** (mesuré dans le LAZ), **duzeltildi** (position du DXF
-corrigée par le scan), **varsayildi** (valeur par défaut ou non vérifiée
-— à contrôler). Un filtre de vue permet de les colorer. Les cotes sont
-arrondies aux 5 cm les plus proches, les niveaux au cm ; les positions ne
-sont pas arrondies.
-
-Relancer le bouton dans le même projet est sans risque : les éléments
-déjà créés sont conservés (même déplacés), ceux que vous avez supprimés
-ne reviennent pas, seuls les manquants sont ajoutés.
-
-### Rölöve Prototip — prototype nettoyé avec dalles
-
-Utilise **les mêmes entrées** que Rölöve Aktar (Input 1–4) pour produire
-une **volumétrie de départ rapide**, pas un relevé : les étages ne flottent
-plus, le bâtiment repose sur ses dalles. Les cotes fines se corrigent
-ensuite à la main.
-
+- **Mesure :** les murs de chaque étage sont calés sur le scan et les
+  niveaux y sont mesurés (étage principal = 0.00).
 - **Nettoyage :** les angles presque droits (jusqu'à 5°) passent à 90°, les
   murs extérieurs à moins de 15 cm d'un étage à l'autre sont alignés sur
-  une même ligne. Les murs plus inclinés restent tels que scannés.
+  une même ligne. Les murs plus inclinés restent tels que scannés ; les
+  angles fermés dans le scan restent fermés.
 - **Dalles :** une dalle par niveau (type au choix) ; face supérieure au
   niveau, jusqu'à la face extérieure des murs extérieurs. La dalle d'un
   niveau couvre cet étage et celui du dessous (une partie non couverte est
   supposée être un toit plat).
 - **Les murs** sont attachés au niveau supérieur et s'arrêtent sous sa
-  dalle ; les murs du dernier étage gardent la hauteur scannée. Si vous
-  changez ensuite le type de dalle, mettez aussi à jour le décalage
-  supérieur des murs.
-- Les murs déplacés portent `pyKalfa Tarama Durumu` = **duzeltildi** ;
-  l'écart (cm) indique de combien ils s'éloignent du scan.
+  dalle ; les murs du dernier étage gardent la hauteur scannée. Les murs
+  extérieurs s'épaississent **vers l'extérieur depuis la face intérieure
+  scannée**. Si vous changez ensuite le type de dalle, mettez aussi à jour
+  le décalage supérieur des murs.
 - Pas de toiture, d'escalier ni de trémie.
-- **Ne l'utilisez pas dans le même projet que Rölöve Aktar** (deux
-  bâtiments superposés) ; le bouton avertit dans ce cas.
 
-1. Ouvrez un projet vide, **pyKalfa** → **Duvar** → **Rolove Prototip**.
-2. Choisissez les entrées comme pour Rölöve Aktar ; le résumé affiche les
-   chiffres du nettoyage. Un `prototip_preview_katN.png` est écrit par
-   étage.
-3. Choisissez les types de murs, portes/fenêtres et le **type de dalle** ;
-   un seul **Ctrl+Z** annule tout.
+1. Ouvrez un projet vide (le gabarit Architectural suffit).
+2. **pyKalfa** → **Duvar** → **Rolove Prototip** et choisissez l'**Input 1**.
+   Les Inputs 2–4 de même nom dans le même dossier sont proposés ; la
+   fenêtre des entrées marque chacune `OK` / `EKSIK` (manquante), et une
+   entrée erronée ou manquante se choisit avec « Input N sec / degistir ».
+3. Le résumé affiche les niveaux et les chiffres du nettoyage ; les niveaux
+   sont modifiables. Un `prototip_preview_katN.png` est écrit par étage.
+4. Choisissez le type de mur extérieur **une fois**, un type par groupe
+   d'épaisseur intérieure, les familles de portes et fenêtres (ou
+   « Opening kullan ») et le **type de dalle**. Un seul **Ctrl+Z** annule
+   tout.
+
+Chaque mur/porte/fenêtre porte le paramètre `pyKalfa Tarama Durumu` :
+**olculdu** (mesuré dans le scan), **duzeltildi** (position corrigée par le
+scan ou par le nettoyage ; l'écart est stocké en cm), **varsayildi**
+(valeur par défaut ou non vérifiée — à contrôler). Un filtre de vue permet
+de les colorer.
+
+Relancer le bouton dans le même projet est sans risque : les éléments déjà
+créés sont conservés, ceux que vous avez supprimés ne reviennent pas, seuls
+les manquants sont ajoutés.
 
 ## Licence
 

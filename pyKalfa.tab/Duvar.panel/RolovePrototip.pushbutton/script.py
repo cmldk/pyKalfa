@@ -1,13 +1,13 @@
 # -*- coding: utf-8 -*-
 """pyKalfa / Rolove Prototip: Polycam taramasi -> toparlanmis, dosemeli prototip
 
-Akis (Rolove Aktar ile ayni girdiler):
+Akis:
 
   1. Numarali girdiler secilir (`ui.pick_inputs`).
   2. `pysrc/rolove/prepare_prototype_input.py` (ilerleme cubugu): Rolove
      hazirligi + toparlama (diklestirme, katlar arasi dis duvar hizasi) ->
      `output/prototip_input.json` + kat PNG'leri.
-  3. Ozet / onay (Rolove Aktar elemanlari varsa uyari), duvar tipleri,
+  3. Ozet / onay (eski Rolove Aktar elemanlari varsa uyari), duvar tipleri,
      kapi/pencere aileleri ve doseme tipi secilir.
   4. `pysrc/rolove/prototype_floors.py`: secilen dis duvar kalinligiyla
      doseme hatlari -> `output/prototip_floors.json`.

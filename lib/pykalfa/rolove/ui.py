@@ -39,7 +39,7 @@ def _pick_one(key, folder=""):
 
 def _inputs_text(sel, probs):
     bad = dict(probs)
-    lines = ["Rolove Aktar 4 Polycam ciktisi kullanir:", ""]
+    lines = ["Rolove Prototip 4 Polycam ciktisi kullanir:", ""]
     for i in inputs.INPUTS:
         key = i["key"]
         value = sel.get(key)
@@ -77,7 +77,7 @@ def pick_inputs():
             options.append(opt)
             by_option[opt] = i["key"]
         options.append(CANCEL)
-        choice = forms.alert(_inputs_text(sel, probs), title="Rolove Aktar - girdiler",
+        choice = forms.alert(_inputs_text(sel, probs), title="Rolove Prototip - girdiler",
                              options=options)
         if choice == CONTINUE:
             return sel
@@ -110,7 +110,7 @@ def show_missing(data):
         name = inputs.label(key) if key in inputs.BY_KEY else key
         lines.append("- {}  ->  Polycam'de: {}".format(name, m["polycam_export"]))
     lines += ["", "Butonu tekrar calistirip eksik Input'u 'sec / degistir' ile secin."]
-    forms.alert("\n".join(lines), title="Rolove Aktar - eksik girdi", exitscript=True)
+    forms.alert("\n".join(lines), title="Rolove Prototip - eksik girdi", exitscript=True)
 
 
 def _summary_text(data, plan):
@@ -163,7 +163,7 @@ def _summary_text(data, plan):
 
 def summary_and_confirm(data, plan=None):
     """"create" | "edit"; iptal scripti sonlandirir."""
-    choice = forms.alert(_summary_text(data, plan), title="Rolove Aktar - onizleme",
+    choice = forms.alert(_summary_text(data, plan), title="Rolove Prototip - onizleme",
                          options=[CREATE, EDIT, CANCEL])
     if choice == CREATE:
         return "create"
@@ -180,14 +180,14 @@ def edit_levels(data):
         text = forms.ask_for_string(
             default="{:.2f}".format(lv["elevation_m"]),
             prompt="{} kotu (metre, ana kat 0.00)".format(lv["name"]),
-            title="Rolove Aktar - kat kotlari",
+            title="Rolove Prototip - kat kotlari",
         )
         if not text:
             continue
         try:
             value = round(float(text.replace(",", ".")), 2)
         except ValueError:
-            forms.alert("Gecersiz sayi: {}".format(text), title="Rolove Aktar")
+            forms.alert("Gecersiz sayi: {}".format(text), title="Rolove Prototip")
             continue
         if abs(value - lv["elevation_m"]) > 1e-9:
             overrides[lv["id"]] = value

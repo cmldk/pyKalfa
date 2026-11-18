@@ -2,8 +2,8 @@
 
 **Türkçe** · [English](README.en.md) · [Français](README.fr.md)
 
-Revit için pyRevit eklentisi. Kadastro görüntülerinden parsel ve bina
-geometrisi, kat planı DXF'inden de gerçek duvarlar üretir.
+Revit için pyRevit eklentisi. Kadastro verisinden parsel ve bina
+geometrisi, Polycam taramasından da döşemeli bir bina prototipi üretir.
 
 ## Özellikler
 
@@ -11,8 +11,6 @@ geometrisi, kat planı DXF'inden de gerçek duvarlar üretir.
 | --- | --- |
 | **Parsel/Bina Aktar** | Kadastro görüntülerinden (PNG) parsel sınırlarını `DetailLine`, bina alanlarını `FilledRegion`, parsel numaralarını `TextNote` olarak Revit'e çizer. |
 | **Parsel/Bina GIS** | Valonya'da adres veya CaPaKey ile SPW geoportalından parsel sınırlarını, binaları ve parsel numaralarını alıp Parsel/Bina Aktar ile aynı stillerle çizer. OCR ve görsel gerekmez. |
-| **Duvar Aktar** | Kat planı DXF'indeki duvarları gerçek Revit `Wall` elemanlarına dönüştürür. |
-| **Rölöve Aktar** | Polycam taramasından boş projeye hızlı rölöve: ölçülen kat kotları, taranan yüzlere oturtulmuş duvarlar, kapı/pencere ve adlı odalar. |
 | **Rölöve Prototip** | Aynı Polycam taramasından toparlanmış, döşemeli hızlı prototip: dik köşeler, katlar arası hizalı dış duvarlar, her katta döşeme. |
 
 ## Gereksinimler
@@ -134,29 +132,11 @@ parsel numaraları parselin kadastro özniteliklerinden gelir.
 > Kaynak: Plan parcellaire cadastral © AGDP/SPF Finances, via SPW ;
 > Bâtiments, voirie © SPW (PICC_VDIFF).
 
-### Duvar Aktar
+### Rölöve Prototip
 
-1. Duvarların gideceği kata ait bir **plan görünümüne** geçin.
-2. **pyKalfa** → **Duvar** → **Duvar Aktar**.
-3. Sırasıyla:
-   - **DXF dosyasını** seçin
-   - *(gerekirse)* çizim birimini, orijine taşımayı veya tek çizgi
-     modunu onaylayın
-   - **katmanı** seçin — program en olası duvar katmanını önerir.
-     Kapı ve pencereler duvarla aynı şekilde çizildiği için ancak
-     katmanla ayrılabilir, bu yüzden bu adım önemlidir
-   - **duvar yüksekliği**, **Level** ve **Wall Type** seçin
-4. Onay penceresini geçin; işlem bitince oluşan/oluşamayan duvar sayısı
-   ve toplam uzunluk gösterilir.
-
-> Aktarımın tamamı tek bir işlemdir: sonucu beğenmezseniz Revit'te tek
-> bir **Ctrl+Z** ile geri alabilirsiniz.
-
-### Rölöve Aktar
-
-Polycam (iPhone/iPad LiDAR) taramasından mimar için hızlı bir başlangıç
-modeli üretir. Amaç güvenilir bir rölöve: ölçü taramadan gelir, belirsiz
-olan uydurulmaz, işaretlenir.
+Polycam (iPhone/iPad LiDAR) taramasından boş projeye **hızlı bir başlangıç
+kütlesi** üretir: duvarlar, döşemeler, kapı/pencere ve adlı odalar. Ölçü
+belgesi değildir; ince ölçüler sonradan elle düzeltilir.
 
 **Gereken girdiler** (Polycam Basic plan):
 
@@ -169,58 +149,40 @@ olan uydurulmaz, işaretlenir.
 
 Polycam'in OBJ (mesh) zip'i Input 1 değildir; içinde DXF yoktur.
 
-1. Boş bir proje açın (Architectural şablon yeterli).
-2. **pyKalfa** → **Duvar** → **Rolove Aktar** ve **Input 1**'i seçin.
-   Aynı klasörde aynı adlı Input 2–4 kendiliğinden önerilir; girdi
-   penceresi her birini `OK` / `EKSIK` olarak gösterir, yanlış ya da eksik
-   olanı "Input N seç / değiştir" ile seçin (ad uyması gerekmez).
-3. Hazırlık birkaç saniye sürer (örnek 4 katlı evde ~5 s). Özet penceresi
-   kat kotlarını (ana kat = 0.00), her katın taramaya oturup oturmadığını
-   ve duvar durumlarını gösterir; kotlar düzeltilebilir. Kat başına PNG
-   önizleme `output/` altına yazılır.
-4. Dış duvar tipini **bir kez**, her iç duvar kalınlık grubu için bir tip,
-   kapı ve pencere ailesini seçin (ya da "Opening kullan").
-5. Level'lar `Kat N (Scan)` adıyla, duvarlar her katın kendi Level'ında
-   oluşur. Dış duvarlar taranan **iç yüzden dışa doğru** kalınlaşır
-   (Location Line = Finish Face: Interior).
-
-Her duvar/kapı/pencere `pyKalfa Tarama Durumu` parametresini taşır:
-**olculdu** (LAZ'dan ölçüldü), **duzeltildi** (DXF konumu taramaya göre
-düzeltildi), **varsayildi** (varsayılan ya da doğrulanamadı — kontrol
-edin). Görünüm filtresiyle renklendirilebilir. Ölçüler en yakın 5 cm'ye,
-kotlar 1 cm'ye yuvarlanır; konumlar yuvarlanmaz.
-
-Butonu aynı projede tekrar çalıştırmak güvenlidir: daha önce oluşturulan
-elemanlar (taşınmış olsalar bile) korunur, sildikleriniz geri gelmez,
-yalnız eksikler eklenir.
-
-### Rölöve Prototip
-
-Rölöve Aktar ile **aynı girdilerden** (Input 1–4), ölçü belgesi değil
-**hızlı bir başlangıç kütlesi** üretir: kat duvarları havada durmaz, bina
-döşemeleriyle tek parça görünür. İnce ölçüler sonradan elle düzeltilir.
-
+- **Ölçü:** her katın duvarları taramaya oturtulur, kat kotları taramadan
+  ölçülür (ana kat = 0.00).
 - **Toparlama:** neredeyse dik köşeler (5°'ye kadar) 90°'ye, katlar arası
   birbirine 15 cm'den yakın dış duvarlar aynı hatta oturur. Daha eğik
-  duvarlar olduğu gibi kalır.
+  duvarlar olduğu gibi kalır; taramada kapalı köşeler kapalı kalır.
 - **Döşeme:** her katın Level'ına bir döşeme (tipini siz seçersiniz); üst
   yüzü kat kotunda, dış duvarın dış yüzüne kadar. Bir katın döşemesi o
   katın ve altındaki katın izini örter (üstü açık kalan kısım düz çatı
   varsayılır).
 - **Duvarlar** üst katın Level'ına bağlanır ve döşemenin altında biter;
-  en üst katın duvarları taranan yükseklikte kalır. Döşeme tipini
-  sonradan değiştirirseniz duvarların üst ofsetini de güncelleyin.
-- Yerinden oynayan duvarlar `pyKalfa Tarama Durumu` = **duzeltildi**
-  taşır; sapma (cm) taramadan ne kadar uzaklaştığını gösterir.
+  en üst katın duvarları taranan yükseklikte kalır. Dış duvarlar taranan
+  **iç yüzden dışa doğru** kalınlaşır. Döşeme tipini sonradan
+  değiştirirseniz duvarların üst ofsetini de güncelleyin.
 - Çatı, merdiven ve merdiven boşluğu yok.
-- **Rölöve Aktar ile aynı projede kullanmayın** (iki bina üst üste
-  gelir); buton böyle bir projede uyarır.
 
-1. Boş bir proje açın, **pyKalfa** → **Duvar** → **Rolove Prototip**.
-2. Girdileri Rölöve Aktar'daki gibi seçin; özet penceresi toparlama
-   sayılarını gösterir. Kat başına `prototip_preview_katN.png` yazılır.
-3. Dış/iç duvar tipleri, kapı/pencere ve **döşeme tipi** seçilir; işlem tek
-   **Ctrl+Z** ile geri alınabilir.
+1. Boş bir proje açın (Architectural şablon yeterli).
+2. **pyKalfa** → **Duvar** → **Rolove Prototip** ve **Input 1**'i seçin.
+   Aynı klasörde aynı adlı Input 2–4 kendiliğinden önerilir; girdi
+   penceresi her birini `OK` / `EKSIK` olarak gösterir, yanlış ya da eksik
+   olanı "Input N seç / değiştir" ile seçin.
+3. Özet penceresi kat kotlarını ve toparlama sayılarını gösterir; kotlar
+   düzeltilebilir. Kat başına `prototip_preview_katN.png` yazılır.
+4. Dış duvar tipini **bir kez**, her iç duvar kalınlık grubu için bir tip,
+   kapı ve pencere ailesini (ya da "Opening kullan") ve **döşeme tipini**
+   seçin. İşlem tek **Ctrl+Z** ile geri alınabilir.
+
+Her duvar/kapı/pencere `pyKalfa Tarama Durumu` parametresini taşır:
+**olculdu** (taramadan ölçüldü), **duzeltildi** (konumu taramaya göre ya da
+toparlamada düzeltildi; sapma cm olarak yazılır), **varsayildi**
+(varsayılan ya da doğrulanamadı — kontrol edin). Görünüm filtresiyle
+renklendirilebilir.
+
+Butonu aynı projede tekrar çalıştırmak güvenlidir: daha önce oluşturulan
+elemanlar korunur, sildikleriniz geri gelmez, yalnız eksikler eklenir.
 
 ## Lisans
 
