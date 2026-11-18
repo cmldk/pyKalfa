@@ -25,10 +25,25 @@ IronPython 2.7.
 
 import math
 
-from Autodesk.Revit.DB import Curve, Line, StairsEditScope, SubTransaction, Transaction, XYZ
-from Autodesk.Revit.DB.Architecture import StairsRun, StairsRunJustification
+from Autodesk.Revit.DB import (
+    Curve,
+    FilteredElementCollector,
+    Line,
+    StairsEditScope,
+    SubTransaction,
+    Transaction,
+    XYZ,
+)
+from Autodesk.Revit.DB.Architecture import (
+    StairsRun,
+    StairsRunJustification,
+    StairsRunType,
+    StairsType,
+    StairsUndersideSurfaceStyle,
+)
 from System.Collections.Generic import List
 
+from pykalfa.revitutils import elem_name
 from pykalfa.rolove import stairs_calc
 
 M_PER_FT = 0.3048
@@ -113,12 +128,54 @@ def _fit(stairs, height, s, stype, winders, width):
     return fit
 
 
+def _by_name(doc, cls, name):
+    for el in FilteredElementCollector(doc).OfClass(cls):
+        if elem_name(el) == name:
+            return el
+    return None
+
+
+def _smooth_turn_type(ctx, stairs_type, recorder_cls):
+    """Monolitik kolda "Underside of Winder" = Stepped ise yelpaze
+    basamaklarin alti blok blok cikar. Secilen tipe dokunmadan kopyasi
+    (merdiven + kol tipi, "- Prototip") alti Smooth olarak hazirlanir;
+    yalniz donen merdivenlerde kullanilir. Varsa ayni adli kopya kullanilir."""
+    rt = ctx.doc.GetElement(stairs_type.RunType)
+    if rt is None or not rt.IsMonolithic or rt.UndersideSurfaceStyle != StairsUndersideSurfaceStyle.Stepped:
+        return stairs_type
+    t = Transaction(ctx.doc, "pyKalfa Rolove: donen merdiven tipi")
+    opts = t.GetFailureHandlingOptions()
+    opts.SetFailuresPreprocessor(recorder_cls(ctx.revit_messages, "merdivenler"))
+    t.SetFailureHandlingOptions(opts)
+    t.Start()
+    try:
+        rt_name = "{} - Prototip".format(elem_name(rt))
+        new_rt = _by_name(ctx.doc, StairsRunType, rt_name) or rt.Duplicate(rt_name)
+        new_rt.UndersideSurfaceStyle = StairsUndersideSurfaceStyle.Smooth
+        st_name = "{} - Prototip".format(elem_name(stairs_type))
+        new_st = _by_name(ctx.doc, StairsType, st_name) or stairs_type.Duplicate(st_name)
+        new_st.RunType = new_rt.Id
+        t.Commit()
+    except Exception as ex:  # noqa: BLE001 - tip olmazsa secilen tiple devam
+        if t.HasStarted() and not t.HasEnded():
+            t.RollBack()
+        ctx.report.warnings.append(u"Donen merdiven icin duz altli tip hazirlanamadi ({}); "
+                                   u"donus alti basamakli gorunebilir".format(ex))
+        return stairs_type
+    ctx.report.warnings.append(u"Donen merdivenler '{}' tipiyle kuruldu: secilen tipin kopyasi, "
+                               u"donus alti duz (Smooth)".format(st_name))
+    return new_st
+
+
 def stage_stairs(ctx, recorder_cls):
     """`recorder_cls(sink, stage)`: uyarilari silen ama rapora yazan
     failures preprocessor (creator._Recorder)."""
     items = ctx.data.get("stairs") or []
     ledger_plan = ctx.plan([s["id"] for s in items])
     stairs_type = ctx.choices.stairs_type
+    turn_type = stairs_type
+    if stairs_type is not None and any(s.get("kind") == "turn" for s in items):
+        turn_type = _smooth_turn_type(ctx, stairs_type, recorder_cls)
     for s in items:
         sid = s["id"]
         if sid in ledger_plan["keep"]:
@@ -143,8 +200,9 @@ def stage_stairs(ctx, recorder_cls):
             t.SetFailureHandlingOptions(opts)
             t.Start()
             stairs = ctx.doc.GetElement(stairs_id)
-            if stairs_type is not None:
-                stairs.ChangeTypeId(stairs_type.Id)
+            use_type = turn_type if s.get("kind") == "turn" else stairs_type
+            if use_type is not None:
+                stairs.ChangeTypeId(use_type.Id)
             stype = ctx.doc.GetElement(stairs.GetTypeId())
             height = top.Elevation - base.Elevation       # kot duzenlemeleri dahil
             width = max(float(s["width_ft"]), _attr(stype, "MinRunWidth"))
