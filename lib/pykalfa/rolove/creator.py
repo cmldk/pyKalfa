@@ -45,7 +45,7 @@ from Autodesk.Revit.DB import (
 from Autodesk.Revit.DB.Structure import StructuralType
 from pyrevit import script
 
-from pykalfa.revitutils import WarningSwallower, WarningSwallowerUnjoin, elem_name
+from pykalfa.revitutils import WarningSwallower, elem_name
 from pykalfa.rolove import ledger as ledger_mod
 from pykalfa.rolove import inserts, params, storage
 
@@ -133,6 +133,60 @@ def _transaction(doc, name):
     return t
 
 
+class _Recorder(IFailuresPreprocessor):
+    """WarningSwallower gibi uyarilari siler (diyalog cikmaz) ama metinlerini
+    ve ilgili eleman id'lerini `sink`'e yazar: sessiz yutulan bir Revit
+    uyarisi (ör. kapi/pencere duvari kesemedi) rapora yansisin.
+    `unjoin=True`: "Can't keep elements joined" birlesim kaldirilarak cozulur."""
+
+    def __init__(self, sink, stage, unjoin=False):
+        self.sink = sink
+        self.stage = stage
+        self.unjoin = unjoin
+
+    def PreprocessFailures(self, fa):
+        resolved = False
+        for failure in fa.GetFailureMessages():
+            try:
+                text = failure.GetDescriptionText()
+            except Exception:  # noqa: BLE001
+                text = "?"
+            ids = [e.ToString() for e in failure.GetFailingElementIds()]
+            severity = failure.GetSeverity()
+            if severity == FailureSeverity.Warning:
+                self.sink.append((self.stage, "uyari", text, ids))
+                fa.DeleteWarning(failure)
+            elif self.unjoin and failure.HasResolutionOfType(FailureResolutionType.DetachElements):
+                self.sink.append((self.stage, "birlesim kaldirildi", text, ids))
+                failure.SetCurrentResolutionType(FailureResolutionType.DetachElements)
+                fa.ResolveFailure(failure)
+                resolved = True
+            else:
+                self.sink.append((self.stage, "hata", text, ids))
+        if resolved:
+            return FailureProcessingResult.ProceedWithCommit
+        return FailureProcessingResult.Continue
+
+
+def _report_revit_messages(ctx):
+    """Asama + metin basina tek satir: kac eleman, hangileri (kararli id)."""
+    groups = {}
+    order = []
+    for stage, kind, text, ids in ctx.revit_messages:
+        key = (stage, kind, text)
+        if key not in groups:
+            groups[key] = []
+            order.append(key)
+        groups[key].extend(ids)
+    for key in order:
+        stage, kind, text = key
+        ids = groups[key]
+        names = [ctx.eid_sid.get(i, "#" + i) for i in ids]
+        shown = ", ".join(names[:6]) + (" ..." if len(names) > 6 else "")
+        ctx.report.warnings.append(u"Revit {} ({}): {} [{} eleman: {}]".format(
+            kind, stage, text, len(ids), shown))
+
+
 def _alive(doc, uid):
     try:
         return uid is not None and doc.GetElement(uid) is not None
@@ -185,6 +239,8 @@ class _Ctx(object):
         self.type_cache = {}
         self.created_sids = []
         self.new_walls = []        # (JSON, Wall): bu calistirmada olusturulanlar
+        self.revit_messages = []   # (asama, tur, metin, [eleman id]) - _Recorder
+        self.eid_sid = {}          # Revit ElementId metni -> kararli id
 
     def plan(self, ids):
         existing = set(uid for uid in self.items.values() if _alive(self.doc, uid))
@@ -194,6 +250,7 @@ class _Ctx(object):
         storage.tag(element, sid)
         self.items[sid] = element.UniqueId
         self.created_sids.append(sid)
+        self.eid_sid[element.Id.ToString()] = sid
 
 
 # --------------------------------------------------------------------------
@@ -492,6 +549,21 @@ def _axis_point(w, host, offset_ft, z):
     return XYZ(x, y, z)
 
 
+def _check_host(ctx, o, inst, host):
+    """Teshis: Revit elemani gercekten istenen duvara mi bagladi? (Kapi/
+    pencere duvari kesmiyor, "Pick New Host" ile duzeliyor sorunu.)"""
+    try:
+        ctx.doc.Regenerate()
+        actual = inst.Host
+        if actual is None:
+            ctx.report.warnings.append(u"{}: Revit host atamadi (Host = yok)".format(o["id"]))
+        elif actual.Id != host.Id:
+            ctx.report.warnings.append(u"{}: host {} '{}' oldu, beklenen duvar {}".format(
+                o["id"], actual.Id.ToString(), elem_name(actual), host.Id.ToString()))
+    except Exception as ex:  # noqa: BLE001 - teshis akisi durdurmaz
+        ctx.report.warnings.append(u"{}: host kontrol edilemedi ({})".format(o["id"], ex))
+
+
 def _create_opening(ctx, o, host, level):
     w = ctx.wall_json[o["host_id"]]
     base = level.Elevation
@@ -516,6 +588,7 @@ def _create_opening(ctx, o, host, level):
             if sill is not None and not sill.IsReadOnly:
                 sill.Set(float(o["sill_ft"]))
         params.set_values(inst, ctx.param_names, _worst(o["status"]), None, None)
+        _check_host(ctx, o, inst, host)
         return inst
     half = o["width_ft"] / 2.0
     p1 = _axis_point(w, host, o["offset_ft"] - half, base + o["sill_ft"])
@@ -642,12 +715,13 @@ def create_all(doc, app, data, choices):
                 logger.info("Rolove asamasi tamam: {}".format(name))
                 continue
             t = _transaction(doc, "pyKalfa Rolove: {}".format(name))
-            if name == "doseme":
-                # Doseme-duvar otomatik birlesimi "Can't keep elements joined"
-                # verebilir: birlesim kaldirilarak cozulur (geometri ayni).
-                opts = t.GetFailureHandlingOptions()
-                opts.SetFailuresPreprocessor(WarningSwallowerUnjoin())
-                t.SetFailureHandlingOptions(opts)
+            # Uyarilar yine silinir ama rapora yazilir. Doseme-duvar otomatik
+            # birlesimi "Can't keep elements joined" verebilir: birlesim
+            # kaldirilarak cozulur (geometri ayni).
+            opts = t.GetFailureHandlingOptions()
+            opts.SetFailuresPreprocessor(_Recorder(ctx.revit_messages, name,
+                                                   unjoin=(name == "doseme")))
+            t.SetFailureHandlingOptions(opts)
             t.Start()
             try:
                 fn()
@@ -664,6 +738,7 @@ def create_all(doc, app, data, choices):
         group.RollBack()
         raise
     group.Assimilate()
+    _report_revit_messages(ctx)
     ctx.report.seconds = time.time() - t0
     return ctx.report
 
