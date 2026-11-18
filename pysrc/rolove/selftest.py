@@ -1019,6 +1019,32 @@ def test_floor_loops_union_with_floor_below(tmp):
 
 
 @test("proto")
+def test_floor_loops_closes_corner_gaps_from_walls(tmp):
+    # Gercek taramadaki gibi: dis duvar ic yuz hatlari koselerde 0.2 m kisa
+    # kalir. Doseme yine DUVARLARDAN cikmali, kaymis odadan degil.
+    import prototype as P
+    g = 0.2
+    walls = [_pw(2, (g, 0), (10 - g, 0)), _pw(2, (10, g), (10, 8 - g)),
+             _pw(2, (10 - g, 8), (g, 8)), _pw(2, (0, 8 - g), (0, g))]
+    room = _room(2, -0.15, -0.15, 10.15, 8.15)                   # 15 cm kaymis oda
+    doc = P.tidy(_proto_doc(walls, {2: 0.0}, rooms=[room]))
+    fl = P.floor_loops(doc, 0.30)
+    check(len(fl) == 1 and approx(fl[0]["area_m2"], 10.6 * 8.6, 0.05), fl and fl[0]["area_m2"])
+
+
+@test("proto")
+def test_floor_loops_perimeter_wall_marked_interior(tmp):
+    # Ornek taramanin Kat 2'si: cevre duvarlarindan biri 'interior' sinifinda.
+    import prototype as P
+    walls = _rect_walls(2, 0, 0, 10, 8)
+    walls[1]["side"], walls[1]["location"] = "interior", "center"
+    room = _room(2, -0.15, -0.15, 10.15, 8.15)
+    doc = P.tidy(_proto_doc(walls, {2: 0.0}, rooms=[room]))
+    fl = P.floor_loops(doc, 0.0)
+    check(len(fl) == 1 and approx(fl[0]["area_m2"], 80.0, 0.05), fl and fl[0]["area_m2"])
+
+
+@test("proto")
 def test_floor_loops_open_chain_uses_rooms(tmp):
     import prototype as P
     walls = _rect_walls(2, 0, 0, 10, 8)[:3]                       # bir dis duvar eksik
@@ -1067,6 +1093,44 @@ def test_floor_loops_cli(tmp):
                           str(tmp / "yok.json"), "--exterior-thickness-m", "0.3",
                           "--output", str(out)], capture_output=True, text=True)
     check(bad.returncode == 1 and "HATA:" in bad.stderr, bad.stderr[-300:])
+
+
+def run_proto_cli(args):
+    import subprocess
+    proc = subprocess.run([sys.executable, str(HERE / "prepare_prototype_input.py")] + list(args),
+                          capture_output=True, text=True, encoding="utf-8", errors="replace")
+    run_proto_cli.last = proc
+    return proc.returncode
+
+
+@test("proto")
+def test_prepare_prototype_end_to_end_synthetic(tmp):
+    fixtures.synthetic_building(tmp, write_files=True)
+    code = run_proto_cli(["--input", str(tmp / "p.dxf"), "--output-dir", str(tmp / "out")])
+    check(code == 0, (code, run_proto_cli.last.stderr[-800:]))
+    check("PROGRESS|100|" in run_proto_cli.last.stdout, run_proto_cli.last.stdout[-300:])
+    j = _load_json(tmp / "out" / "prototip_input.json")
+    ids = [x["id"] for k in ("levels", "walls", "openings", "rooms") for x in j[k]]
+    check(ids and all(i.startswith("p-") for i in ids), ids[:5])
+    check(all(lv["name"].endswith("(Prototip)") for lv in j["levels"]), j["levels"])
+    check(all(w["top_floor"] == 2 for w in j["walls"] if w["floor"] == 1))
+    check(all(w["top_floor"] is None for w in j["walls"] if w["floor"] == 2))
+    check("theta_deg" in j["prototype"], j.get("prototype"))
+    check(j["previews"] and all("prototip_preview_kat" in p and Path(p).exists()
+                                for p in j["previews"]), j["previews"])
+    check(not (tmp / "out" / "rolove_input.json").exists())
+
+
+@test("proto")
+def test_prepare_prototype_missing_inputs(tmp):
+    fixtures.synthetic_building(tmp, write_files=True)
+    for ext in ("csv", "laz", "glb"):
+        (tmp / "p.{}".format(ext)).unlink()
+    code = run_proto_cli(["--input", str(tmp / "p.dxf"), "--output-dir", str(tmp / "out")])
+    check(code == 2, (code, run_proto_cli.last.stderr[-500:]))
+    j = _load_json(tmp / "out" / "prototip_input.json")
+    check({m["file"] for m in j["missing"]} == {"csv", "laz", "glb"}, j["missing"])
+    check("prototype" not in j)
 
 
 # --------------------------------------------------------------------------

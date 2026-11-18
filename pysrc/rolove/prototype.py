@@ -312,7 +312,7 @@ def tidy(doc: dict) -> dict:
 # Dosemeler
 # --------------------------------------------------------------------------
 
-LINE_EXTEND_M = 0.05        # polygonize icin dis duvar hatlari uclardan uzatilir
+LINE_EXTEND_M = 0.30        # polygonize icin: koselerde 10-20 cm acik kalan hatlar kesissin
 ROOM_CLOSE_M = 0.15         # oda araliklari (ic duvar) bu kadar kapatilir
 MIN_SLAB_M2 = 0.5
 SQFT_TO_M2 = 0.3048 * 0.3048
@@ -326,14 +326,16 @@ def _extended(w, d):
 
 
 def footprint(doc, floor, exterior_thickness_m):
-    """Katin ayak izi (shapely, feet): dis duvar ic yuz hatlarindan kapanan
-    poligonlar + bunlarin disinda kalan odalar (ic duvar araliklari
-    kapatilmis), dis duvar kalinligi kadar disa genisletilmis."""
+    """Katin ayak izi (shapely, feet): katin TUM duvar hatlarindan (dis
+    duvarda ic yuz, ic duvarda eksen; ornek taramada cevrenin bir kismi
+    'interior' sinifinda) kapanan hucrelerin birlesimi + bunlarin disinda
+    kalan odalar (ic duvar araliklari kapatilmis), dis duvar kalinligi
+    kadar disa genisletilmis."""
     from shapely.geometry import LineString, Polygon
     from shapely.ops import polygonize, unary_union
 
     ext = [w for w in doc.get("walls") or []
-           if w["floor"] == floor and w["side"] == "exterior" and _length(w) > 1e-9]
+           if w["floor"] == floor and _length(w) > 1e-9]
     lines = [LineString(_extended(w, LINE_EXTEND_M * config.FT)) for w in ext]
     primary = unary_union(list(polygonize(unary_union(lines)))) if lines else Polygon()
 
@@ -393,3 +395,76 @@ def floor_loops(doc, exterior_thickness_m, warnings=None) -> list:
                                     [_ring(h.coords) for h in p.interiors],
                         "area_m2": round(p.area * SQFT_TO_M2, 3)})
     return out
+
+
+# --------------------------------------------------------------------------
+# Onizleme
+# --------------------------------------------------------------------------
+
+def render_floor(doc, floor, path):
+    """Toparlanmis kat: odalar gri, duvarlar duruma gore renkli, aciklikler
+    mavi, kalinliksiz ayak izi siyah ince cizgi. PNG yolunu dondurur."""
+    from pathlib import Path
+
+    import cv2
+    import numpy as np
+    import preview
+
+    walls = [w for w in doc.get("walls") or [] if w["floor"] == floor]
+    rooms = [r for r in doc.get("rooms") or [] if r["floor"] == floor]
+    ops = [o for o in doc.get("openings") or [] if o["floor"] == floor]
+    fp = footprint(doc, floor, 0.0)
+    rings = []
+    for p in getattr(fp, "geoms", [fp]):
+        if not p.is_empty and p.geom_type == "Polygon":
+            rings += [list(p.exterior.coords)] + [list(h.coords) for h in p.interiors]
+    m = 1.0 / config.FT                         # feet -> metre
+    pts = [(x * m, y * m) for w in walls for x, y in _line(w)]
+    pts += [(x * m, y * m) for r in rooms for x, y in r["polygon_ft"]]
+    pts += [(x * m, y * m) for ring in rings for x, y in ring]
+    if not pts:
+        pts = [(0.0, 0.0), (1.0, 1.0)]
+    arr = np.asarray(pts, dtype=np.float64)
+    lo = arr.min(axis=0) - preview.MARGIN_M
+    hi = arr.max(axis=0) + preview.MARGIN_M
+    scale = min(100.0, preview.MAX_SIDE_PX / max(float((hi - lo).max()), 1e-6))
+    width, height = (np.ceil((hi - lo) * scale)).astype(int) + 1
+    img = np.full((height, width + 1, 3), 255, np.uint8)
+
+    def px(p):
+        return (int(round((p[0] * m - lo[0]) * scale)),
+                int(round(height - 1 - (p[1] * m - lo[1]) * scale)))
+
+    for r in rooms:
+        cv2.fillPoly(img, [np.array([px(p) for p in r["polygon_ft"]], dtype=np.int32)],
+                     preview.ROOM_FILL)
+    for ring in rings:
+        cv2.polylines(img, [np.array([px(p) for p in ring], dtype=np.int32)], True,
+                      (0, 0, 0), 1, cv2.LINE_AA)
+    for r in rooms:
+        cv2.putText(img, r["name"], px(r["label_point_ft"]), cv2.FONT_HERSHEY_SIMPLEX, 0.4,
+                    preview.TEXT_COLOR, 1, cv2.LINE_AA)
+    stroke = max(2, int(round(0.06 * scale)))
+    by_id = {}
+    for w in walls:
+        by_id[w["id"]] = w
+        cv2.line(img, px(w["start_ft"]), px(w["end_ft"]),
+                 preview.STATUS_COLORS.get(w.get("status"), (0, 0, 0)), stroke, cv2.LINE_AA)
+    for o in ops:
+        host = by_id.get(o["host_id"])
+        if host is None or _length(host) <= 1e-9:
+            continue
+        half = float(o.get("width_ft") or 0.0) / 2.0
+        a = _point_at(_line(host), o["offset_ft"] - half)
+        b = _point_at(_line(host), o["offset_ft"] + half)
+        cv2.line(img, px(a), px(b), preview.OPENING_COLOR, stroke + 2, cv2.LINE_AA)
+    cv2.putText(img, "Kat {} PROTOTIP  yesil=olculdu  turuncu=duzeltildi  kirmizi=varsayildi  "
+                "siyah=doseme izi".format(floor), (8, 18), cv2.FONT_HERSHEY_SIMPLEX, 0.45,
+                (0, 0, 0), 1, cv2.LINE_AA)
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    ok, buf = cv2.imencode(".png", img)
+    if not ok:
+        raise RuntimeError("PNG kodlanamadi: {}".format(path))
+    path.write_bytes(buf.tobytes())
+    return path
