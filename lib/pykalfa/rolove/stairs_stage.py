@@ -39,14 +39,14 @@ def stage_stairs(ctx, recorder_cls):
     """`recorder_cls(sink, stage)`: uyarilari silen ama rapora yazan
     failures preprocessor (creator._Recorder)."""
     items = ctx.data.get("stairs") or []
-    plan = ctx.plan([s["id"] for s in items])
+    ledger_plan = ctx.plan([s["id"] for s in items])
     stairs_type = ctx.choices.stairs_type
     for s in items:
         sid = s["id"]
-        if sid in plan["keep"]:
+        if sid in ledger_plan["keep"]:
             ctx.report.add("kept", "stairs", sid)
             continue
-        if sid in plan["deleted"]:
+        if sid in ledger_plan["deleted"]:
             ctx.report.add("deleted", "stairs", sid, "kullanici silmis")
             continue
         base = ctx.levels.get(s["floor"])
@@ -68,15 +68,15 @@ def stage_stairs(ctx, recorder_cls):
                 stairs.ChangeTypeId(stairs_type.Id)
             stype = ctx.doc.GetElement(stairs.GetTypeId())
             height = top.Elevation - base.Elevation       # kot duzenlemeleri dahil
-            plan = stairs_calc.plan_run(height, s.get("depth_ft"), _attr(stype, "MaxRiserHeight"),
+            run_plan = stairs_calc.plan_run(height, s.get("depth_ft"), _attr(stype, "MaxRiserHeight"),
                                         _attr(stype, "MinTreadDepth"))
-            stairs.DesiredRisersNumber = plan["risers"]
-            stairs.ActualTreadDepth = plan["tread_ft"]
+            stairs.DesiredRisersNumber = run_plan["risers"]
+            stairs.ActualTreadDepth = run_plan["tread_ft"]
             (sx, sy), (ex, ey) = s["start_ft"], s["end_ft"]
             scan_run = math.hypot(ex - sx, ey - sy)
             ux, uy = ((ex - sx) / scan_run, (ey - sy) / scan_run) if scan_run > 1e-9 else (1.0, 0.0)
             z = base.Elevation
-            end = (sx + ux * plan["run_ft"], sy + uy * plan["run_ft"])
+            end = (sx + ux * run_plan["run_ft"], sy + uy * run_plan["run_ft"])
             path = Line.CreateBound(_xyz((sx, sy), z), _xyz(end, z))
             run = StairsRun.CreateStraightRun(ctx.doc, stairs_id, path, StairsRunJustification.Center)
             width = max(float(s["width_ft"]), _attr(stype, "MinRunWidth"))
@@ -93,11 +93,11 @@ def stage_stairs(ctx, recorder_cls):
             ctx.report.add("failed", "stairs", sid, str(ex))
             continue
         notes = ["{} riht x {:.1f} cm, basamak {:.1f} cm".format(
-            plan["risers"], stairs_calc.riser_ft(height, plan["risers"]) * M_PER_FT * 100,
-            plan["tread_ft"] * M_PER_FT * 100)]
-        if plan["run_ft"] > scan_run + EXTEND_NOTE_FT:
+            run_plan["risers"], stairs_calc.riser_ft(height, run_plan["risers"]) * M_PER_FT * 100,
+            run_plan["tread_ft"] * M_PER_FT * 100)]
+        if run_plan["run_ft"] > scan_run + EXTEND_NOTE_FT:
             notes.append("kat yuksekligine ulasmak icin kol taramadan {:.2f} m uzatildi "
-                         "(taranan {} basamak)".format((plan["run_ft"] - scan_run) * M_PER_FT,
+                         "(taranan {} basamak)".format((run_plan["run_ft"] - scan_run) * M_PER_FT,
                                                        s["treads"]))
         if width > float(s["width_ft"]) + 1e-6:
             notes.append("genislik tipin alt siniri {:.0f} cm'ye cikarildi".format(
