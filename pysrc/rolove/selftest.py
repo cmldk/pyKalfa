@@ -1419,6 +1419,48 @@ def _stairs_calc():
 
 
 @test("stairs")
+def test_free_space_along_stair(tmp):
+    # 10 x 8 m kat izi; merdiven x=5'te y=1'den y=3'e cikiyor: ust uctan
+    # ileri 5 m, alt uctan geri 1 m bos yer var; seridin tamami icerde.
+    import stairs as S
+    from shapely.geometry import box
+    strip = {"start": (5.0, 1.0), "end": (5.0, 3.0), "width_m": 1.0, "depth_m": 0.25, "treads": 8}
+    info = S.free_space(strip, box(0, 0, 10, 8))
+    check(approx(info["fwd_free_m"], 5.0, 1e-6) and approx(info["back_free_m"], 1.0, 1e-6), info)
+    check(approx(info["inside_frac"], 1.0, 1e-6), info)
+    out = {"start": (5.0, 7.0), "end": (5.0, 9.0), "width_m": 1.0, "depth_m": 0.25, "treads": 8}
+    info = S.free_space(out, box(0, 0, 10, 8))
+    check(approx(info["inside_frac"], 0.5, 1e-6) and info["fwd_free_m"] == 0.0, info)
+
+
+@test("stairs")
+def test_stair_outside_footprint_not_built(tmp):
+    # Ornek tarama Kat 2: 3 basamakli "merdiven"in ust ucu bina izinin
+    # disinda (giris basamaklari) -> Kat 3'e merdiven olarak kurulmaz.
+    import stairs as S
+    from shapely.geometry import box
+    levels = [{"floor": 2, "elevation_m": 0.0}, {"floor": 3, "elevation_m": 3.0}]
+    inside = {"start": (5.0, 1.0), "end": (5.0, 3.0), "width_m": 1.0, "depth_m": 0.25, "treads": 8}
+    outside = {"start": (5.0, 7.5), "end": (5.0, 9.5), "width_m": 1.0, "depth_m": 0.25, "treads": 8}
+    warnings = []
+    recs = S.records({2: [inside, outside]}, levels, warnings, {2: box(0, 0, 10, 8)})
+    check(len(recs) == 1 and approx(recs[0]["fwd_free_ft"], 5.0 * M2FT, 1e-6)
+          and approx(recs[0]["back_free_ft"], 1.0 * M2FT, 1e-6), recs)
+    check(len(warnings) == 1 and "bina" in warnings[0], warnings)
+
+
+@test("stairs")
+def test_place_run_prefers_inside(tmp):
+    C = _stairs_calc()
+    # 2 m eksik: ust uctan 1.5 m bos -> 1.5 ileri, 0.5 geri
+    check(C.place_run(2.0, 4.0, 1.5, 3.0) == (0.5, 1.5), C.place_run(2.0, 4.0, 1.5, 3.0))
+    # ust uc duvarda (0), geride 0.3 m -> 0.3 geri, kalan 1.7 yine ileri
+    b, f = C.place_run(2.0, 4.0, 0.0, 0.3)
+    check(approx(b, 0.3, 1e-9) and approx(f, 1.7, 1e-9), (b, f))
+    check(C.place_run(3.0, 2.5, 5.0, 5.0) == (0.0, 0.0))                 # uzatma gerekmiyor
+
+
+@test("stairs")
 def test_plan_run_reaches_level_with_type_limits(tmp):
     C = _stairs_calc()
     # 3.00 m kat, tip en fazla 19 cm riht -> 16 riht; taranan 26.6 cm derinlik

@@ -35,6 +35,8 @@ DUP_M = 0.01
 MIN_POINTS_PER_TREAD = 10
 MIN_MEASURED_TREADS = 3
 MIN_RISE_M = 0.5                          # olculen toplam yukselme bundan azsa yon belirsiz
+MIN_INSIDE_FRAC = 0.75                    # seridin bu kadari kat izinde degilse bina disi
+FREE_RAY_M = 30.0
 ID_PREFIX = "p-"
 
 
@@ -174,13 +176,47 @@ def orient(strip, points, floor_z, top_z):
     return s
 
 
-def records(strips_by_floor, levels, warnings=None):
+def free_space(strip, footprint):
+    """Kat izi (shapely, metre) icinde: ust uctan ileri ve alt uctan geri
+    bos mesafe, seridin (genislikte dikdortgen) kat izinde kalan orani."""
+    from shapely.geometry import LineString, Point, Polygon
+
+    (sx, sy), (ex, ey) = strip["start"], strip["end"]
+    length = math.hypot(ex - sx, ey - sy)
+    if length <= 1e-9 or footprint is None or footprint.is_empty:
+        return {"fwd_free_m": 0.0, "back_free_m": 0.0, "inside_frac": 0.0}
+    ux, uy = (ex - sx) / length, (ey - sy) / length
+    hw = strip["width_m"] / 2.0
+    nx, ny = -uy * hw, ux * hw
+    rect = Polygon([(sx + nx, sy + ny), (ex + nx, ey + ny), (ex - nx, ey - ny), (sx - nx, sy - ny)])
+    frac = rect.intersection(footprint).area / rect.area if rect.area > 0 else 0.0
+
+    def ray(px, py, dx, dy):
+        if not footprint.covers(Point(px, py)):
+            return 0.0
+        seg = LineString([(px, py), (px + dx * FREE_RAY_M, py + dy * FREE_RAY_M)])
+        part = seg.intersection(footprint)
+        parts = [part] if part.geom_type == "LineString" else list(getattr(part, "geoms", []))
+        best = 0.0
+        for g in parts:
+            if g.geom_type == "LineString" and g.distance(Point(px, py)) < 1e-6:
+                best = max(best, g.length)
+        return best
+
+    return {"fwd_free_m": ray(ex, ey, ux, uy), "back_free_m": ray(sx, sy, -ux, -uy),
+            "inside_frac": frac}
+
+
+def records(strips_by_floor, levels, warnings=None, footprints=None):
     """JSON kayitlari: ustunde kat olan HER merdiven alt kattan ust kata
     (kullanici: yarida kesilmesin). Riht sayisi ve kol uzunlugu Revit
     tarafinda secilen tipin sinirlarindan hesaplanir
     (`lib/pykalfa/rolove/stairs_calc.plan_run`); burada taranan basamak
     derinligi, genislik, baslangic ve cikis yonu tasinir. Ustunde kat
-    olmayan merdiven `warnings`'e yazilir."""
+    olmayan merdiven `warnings`'e yazilir. `footprints` ({kat: shapely,
+    metre}) verilirse: seridin cogu kat izinin disindaysa (ör. giris
+    basamaklari) kurulmaz; kol uzatmasi icin ust uctan ileri / alt uctan
+    geri bos mesafe kayda yazilir (`fwd_free_ft`, `back_free_ft`)."""
     import prototype
     tops = prototype.top_floors(levels)
     elev = {lv["floor"]: float(lv["elevation_m"]) for lv in levels}
@@ -196,6 +232,15 @@ def records(strips_by_floor, levels, warnings=None):
                                     "kurulmadi".format(f, s["treads"]))
                 continue
             storey = elev.get(top, 0.0) - elev.get(f, 0.0)
+            fp = (footprints or {}).get(f)
+            space = free_space(s, fp) if fp is not None else None
+            if space is not None and space["inside_frac"] < MIN_INSIDE_FRAC:
+                if warnings is not None:
+                    warnings.append(
+                        "Kat {}: {} basamakli merdiven bina izinin disina tasiyor (%{:.0f} icerde; "
+                        "giris/dis basamak olabilir), kurulmadi".format(
+                            f, s["treads"], space["inside_frac"] * 100))
+                continue
             k += 1
             out.append({
                 "id": "{}stairs-{}-{}".format(ID_PREFIX, f, k - 1), "floor": f, "top_floor": top,
@@ -205,6 +250,8 @@ def records(strips_by_floor, levels, warnings=None):
                 "width_ft": s["width_m"] * ft, "width_m": round(s["width_m"], 3),
                 "depth_ft": s["depth_m"] * ft, "depth_m": round(s["depth_m"], 3),
                 "treads": int(s["treads"]),
+                "fwd_free_ft": None if space is None else space["fwd_free_m"] * ft,
+                "back_free_ft": None if space is None else space["back_free_m"] * ft,
                 "direction_status": s.get("direction_status", "varsayildi")})
     return out
 
@@ -264,4 +311,12 @@ def find_stairs(doc, dxf_path, points=None):
             strips.append(orient(s, points, floor_z, top_z))
         if strips:
             by_floor[f] = strips
-    return records(by_floor, doc.get("levels") or [], doc.setdefault("warnings", []))
+    from shapely import affinity
+    footprints = {}
+    for f in by_floor:
+        try:
+            footprints[f] = affinity.scale(prototype.footprint(doc, f, 0.0), 1.0 / config.FT,
+                                           1.0 / config.FT, origin=(0, 0))
+        except Exception:  # noqa: BLE001 - iz yoksa yerlesim kontrolu yapilmaz
+            pass
+    return records(by_floor, doc.get("levels") or [], doc.setdefault("warnings", []), footprints)

@@ -76,8 +76,14 @@ def stage_stairs(ctx, recorder_cls):
             scan_run = math.hypot(ex - sx, ey - sy)
             ux, uy = ((ex - sx) / scan_run, (ey - sy) / scan_run) if scan_run > 1e-9 else (1.0, 0.0)
             z = base.Elevation
-            end = (sx + ux * run_plan["run_ft"], sy + uy * run_plan["run_ft"])
-            path = Line.CreateBound(_xyz((sx, sy), z), _xyz(end, z))
+            # Eksik kol once bina icindeki bos yer kadar ust uctan ileri, kalan
+            # alt uctan geri uzatilir (bodrum merdiveni duvari delip disari
+            # cikmasin); bos yer bilinmiyorsa hepsi ileri.
+            back, fwd = stairs_calc.place_run(scan_run, run_plan["run_ft"],
+                                              s.get("fwd_free_ft"), s.get("back_free_ft"))
+            p0 = (sx - ux * back, sy - uy * back)
+            end = (p0[0] + ux * run_plan["run_ft"], p0[1] + uy * run_plan["run_ft"])
+            path = Line.CreateBound(_xyz(p0, z), _xyz(end, z))
             run = StairsRun.CreateStraightRun(ctx.doc, stairs_id, path, StairsRunJustification.Center)
             width = max(float(s["width_ft"]), _attr(stype, "MinRunWidth"))
             run.ActualRunWidth = width
@@ -96,9 +102,14 @@ def stage_stairs(ctx, recorder_cls):
             run_plan["risers"], stairs_calc.riser_ft(height, run_plan["risers"]) * M_PER_FT * 100,
             run_plan["tread_ft"] * M_PER_FT * 100)]
         if run_plan["run_ft"] > scan_run + EXTEND_NOTE_FT:
-            notes.append("kat yuksekligine ulasmak icin kol taramadan {:.2f} m uzatildi "
-                         "(taranan {} basamak)".format((run_plan["run_ft"] - scan_run) * M_PER_FT,
-                                                       s["treads"]))
+            notes.append("kat yuksekligine ulasmak icin kol taramadan {:.2f} m uzatildi: ust uctan "
+                         "{:.2f} m, alt uctan {:.2f} m (taranan {} basamak)".format(
+                             (run_plan["run_ft"] - scan_run) * M_PER_FT, fwd * M_PER_FT,
+                             back * M_PER_FT, s["treads"]))
+            free = s.get("fwd_free_ft")
+            if free is not None and fwd > float(free) + EXTEND_NOTE_FT:
+                notes.append("UYARI: ust uc bina izinin {:.2f} m disina tasiyor, kontrol "
+                             "edin".format((fwd - float(free)) * M_PER_FT))
         if width > float(s["width_ft"]) + 1e-6:
             notes.append("genislik tipin alt siniri {:.0f} cm'ye cikarildi".format(
                 width * M_PER_FT * 100))
