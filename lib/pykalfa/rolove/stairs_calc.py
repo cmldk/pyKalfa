@@ -13,24 +13,35 @@ import math
 FT_PER_M = 1.0 / 0.3048
 DEFAULT_MAX_RISER_FT = 0.19 * FT_PER_M
 DEFAULT_TREAD_FT = 0.28 * FT_PER_M
+SCAN_RISER_CAP_FT = 0.26 * FT_PER_M      # taranan basamakla riht bundan yuksekse tarama eksik
 
 
 def riser_ft(height_ft, risers):
     return float(height_ft) / risers
 
 
-def fit_run(height_ft, scan_len_ft, max_riser_ft, winders=0):
+def fit_run(height_ft, scan_len_ft, max_riser_ft, winders=0, scanned_treads=None):
     """Kol taranan uzunlukta kalir (merdiven ust kattaki acikliga tam denk
-    gelsin): riht sayisi kat yuksekligi / tipin en yuksek rihti (yukari),
-    basamak derinligi = taranan duz kol uzunlugu / duz basamak sayisi.
-    {"risers", "straight_treads", "tread_ft", "run_ft"}"""
+    gelsin); basamak derinligi = taranan duz kol uzunlugu / duz basamak.
+    Riht sayisi: taranan basamak + yelpaze + 1 (taramaya sadik); bununla riht
+    SCAN_RISER_CAP_FT'i asarsa (tarama eksik) kat yuksekligi / tipin en
+    yuksek rihti (yukari). {"risers", "straight_treads", "tread_ft", "run_ft",
+    "source" ("scan" | "type"), "scan_riser_ft" (taranan basamakla riht)}"""
     max_riser = max_riser_ft if max_riser_ft and max_riser_ft > 0 else DEFAULT_MAX_RISER_FT
+    scan_riser = None
+    source = "type"
     risers = max(int(winders) + 2, int(math.ceil(float(height_ft) / max_riser - 1e-9)))
+    if scanned_treads:
+        scanned_risers = int(scanned_treads) + int(winders) + 1
+        scan_riser = float(height_ft) / scanned_risers
+        if scan_riser <= SCAN_RISER_CAP_FT:
+            risers, source = scanned_risers, "scan"
     straight = risers - 1 - int(winders)
     length = float(scan_len_ft or 0.0)
     tread = length / straight if length > 0 else DEFAULT_TREAD_FT
     return {"risers": risers, "straight_treads": straight, "tread_ft": tread,
-            "run_ft": length if length > 0 else tread * straight}
+            "run_ft": length if length > 0 else tread * straight,
+            "source": source, "scan_riser_ft": scan_riser}
 
 
 def split_fitted(straight_treads, scan1, scan2):

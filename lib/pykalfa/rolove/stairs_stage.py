@@ -119,10 +119,13 @@ def _turn_scan_len(s, width):
 def _fit(stairs, height, s, stype, winders, width):
     if winders:
         scan_len = _turn_scan_len(s, width)
+        scanned = int(s["run1_treads"]) + int(s["run2_treads"])
     else:
         (sx, sy), (ex, ey) = s["start_ft"], s["end_ft"]
         scan_len = math.hypot(ex - sx, ey - sy)
-    fit = stairs_calc.fit_run(height, scan_len, _attr(stype, "MaxRiserHeight"), winders)
+        scanned = int(s["treads"])
+    fit = stairs_calc.fit_run(height, scan_len, _attr(stype, "MaxRiserHeight"), winders,
+                              scanned_treads=scanned)
     stairs.DesiredRisersNumber = fit["risers"]
     stairs.ActualTreadDepth = fit["tread_ft"]
     return fit
@@ -235,9 +238,11 @@ def stage_stairs(ctx, recorder_cls):
             ctx.items.pop(sid, None)
             ctx.report.add("failed", "stairs", sid, str(ex))
             continue
-        notes.insert(0, "{} riht x {:.1f} cm, basamak {:.1f} cm (taranan kol uzunluguna "
-                        "sigdirildi)".format(fit["risers"], _cm(stairs_calc.riser_ft(height, fit["risers"])),
-                                             _cm(fit["tread_ft"])))
+        notes.insert(0, "{} riht x {:.1f} cm, basamak {:.1f} cm ({}; kol taranan uzunlukta)".format(
+            fit["risers"], _cm(stairs_calc.riser_ft(height, fit["risers"])), _cm(fit["tread_ft"]),
+            "riht sayisi taramadan" if fit["source"] == "scan" else
+            "taranan basamakla riht {:.1f} cm olurdu (tarama eksik), riht sayisi tipten".format(
+                _cm(fit["scan_riser_ft"] or 0.0))))
         min_tread = _attr(stype, "MinTreadDepth")
         if min_tread and fit["tread_ft"] < min_tread - 1e-6:
             notes.append("basamak tipin alt siniri {:.1f} cm'nin altinda (merdiven dik)".format(

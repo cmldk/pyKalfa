@@ -1533,6 +1533,22 @@ def test_fit_run_keeps_scanned_length(tmp):
 
 
 @test("stairs")
+def test_fit_run_uses_scanned_riser_count(tmp):
+    # Taramaya sadik: riht sayisi taranan basamaktan (+ yelpaze + 1); riht
+    # 26 cm'yi asarsa (tarama eksik) tipin en yuksek rihtine gore.
+    C = _stairs_calc()
+    r = C.fit_run(2.04 * M2FT, 1.62 * M2FT, 0.17 * M2FT, scanned_treads=7)    # ornek Kat 1
+    check(r["risers"] == 8 and r["source"] == "scan", r)
+    check(approx(r["tread_ft"], 1.62 / 7 * M2FT, 1e-9), r)
+    r = C.fit_run(2.54 * M2FT, 2.23 * M2FT, 0.17 * M2FT, scanned_treads=13)   # ornek Kat 3
+    check(r["risers"] == 14 and r["source"] == "scan", r)
+    r = C.fit_run(3.0 * M2FT, 1.95 * M2FT, 0.17 * M2FT, winders=3, scanned_treads=7)  # Kat 2
+    check(r["risers"] == 18 and r["source"] == "type" and r["straight_treads"] == 14, r)
+    check(approx(r["scan_riser_ft"], 3.0 / 11 * M2FT, 1e-9), r)
+    check(C.fit_run(3.0 * M2FT, 1.95 * M2FT, 0.17 * M2FT)["source"] == "type")
+
+
+@test("stairs")
 def test_split_fitted_treads_by_scanned_length(tmp):
     C = _stairs_calc()
     check(C.split_fitted(12, 0, 7) == (0, 12))                       # donus altta
