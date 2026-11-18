@@ -304,6 +304,84 @@ def _join_floor(walls):
         _set_line(s.w, s.line[0], s.line[1])
 
 
+MERGE_LATERAL_M = 0.02      # ayni hat sayilma (yanal)
+MERGE_GAP_M = 0.05          # uclar arasi bu kadar bosluk/ust uste binme birlestirilir
+MERGE_PARALLEL_DEG = 1.0
+
+
+def _mergeable(a, b):
+    if (a["floor"], a["side"], a["location"], a.get("thickness_group_cm")) != \
+            (b["floor"], b["side"], b["location"], b.get("thickness_group_cm")):
+        return None
+    la = _line(a)
+    length = geom2d.seg_length(la)
+    if length <= 1e-9 or _length(b) <= 1e-9:
+        return None
+    ua, ub = geom2d.seg_dir(la), geom2d.seg_dir(_line(b))
+    if abs(ua[0] * ub[1] - ua[1] * ub[0]) > math.sin(math.radians(MERGE_PARALLEL_DEG)):
+        return None
+    t1, d1 = geom2d.project(la, _line(b)[0])
+    t2, d2 = geom2d.project(la, _line(b)[1])
+    if max(abs(d1), abs(d2)) > MERGE_LATERAL_M * config.FT:
+        return None
+    lo, hi = min(t1, t2), max(t1, t2)
+    gap = max(lo - length, 0.0 - hi)
+    if gap > MERGE_GAP_M * config.FT:
+        return None
+    return (min(0.0, lo), max(length, hi))
+
+
+def merge_collinear(doc) -> int:
+    """Ayni katta ayni tur/kalinlikta, ayni hat uzerinde (yanal < 2 cm) uc
+    uca degen ya da ust uste binen duvar parcalari tek duvar olur (ornek
+    tarama Kat 3: 0.54 m + 2.32 m, 7 mm ust uste -> Revit "walls overlap").
+    Uzun parca kalir; kisa parcadaki kapi/pencereler ona gecer; durum kotu
+    olani alir. Birlestirilen parca sayisi."""
+    walls = doc.get("walls") or []
+    ops = doc.get("openings") or []
+    n = 0
+    changed = True
+    while changed:
+        changed = False
+        for i in range(len(walls)):
+            for j in range(len(walls)):
+                if i == j:
+                    continue
+                keep, drop = walls[i], walls[j]
+                if _length(keep) < _length(drop):
+                    continue
+                ext = _mergeable(keep, drop)
+                if ext is None:
+                    continue
+                line = _line(keep)
+                ux, uy = geom2d.seg_dir(line)
+                (x0, y0), _ = line
+                centers = {}
+                for o in ops:
+                    host = keep if o["host_id"] == keep["id"] else drop if o["host_id"] == drop["id"] else None
+                    if host is not None:
+                        centers[o["id"]] = _point_at(_line(host), o["offset_ft"])
+                t_min, t_max = ext
+                _set_line(keep, (x0 + ux * t_min, y0 + uy * t_min), (x0 + ux * t_max, y0 + uy * t_max))
+                new_line = _line(keep)
+                for o in ops:
+                    if o["id"] in centers:
+                        o["host_id"] = keep["id"]
+                        o["offset_ft"] = geom2d.project(new_line, centers[o["id"]])[0]
+                keep["status"] = _worse(keep.get("status"), drop.get("status"))
+                keep["deviation_cm"] = max(float(keep.get("deviation_cm") or 0.0),
+                                           float(drop.get("deviation_cm") or 0.0))
+                keep.setdefault("warnings", []).append(
+                    "prototip: ayni hattaki {} ile birlestirildi".format(drop["id"]))
+                del walls[j]
+                n += 1
+                changed = True
+                break
+            if changed:
+                break
+    return n
+
+
 def top_floors(levels) -> dict:
     order = sorted(levels, key=lambda lv: (lv["elevation_m"], lv["floor"]))
     return {lv["floor"]: (order[i + 1]["floor"] if i + 1 < len(order) else None)
@@ -383,6 +461,8 @@ def tidy(doc: dict) -> dict:
         t = length / 2.0 if length < 2 * half else min(max(t, half), length - half)
         o["offset_ft"] = t
 
+    n_merged = merge_collinear(doc)
+
     tops = top_floors(doc.get("levels") or [])
     for r in doc.get("rooms") or []:
         r["top_floor"] = tops.get(r["floor"])
@@ -405,7 +485,8 @@ def tidy(doc: dict) -> dict:
 
     info = {"theta_deg": round(math.degrees(theta), 3), "orthogonalized": n_orth,
             "stacked": n_stack, "skipped": [ID_PREFIX + s for s in skipped],
-            "separations": len(doc["room_separations"]), "params": params()}
+            "separations": len(doc["room_separations"]), "merged": n_merged,
+            "params": params()}
     doc["prototype"] = info
     doc.setdefault("params", {})["prototype"] = params()
     return doc

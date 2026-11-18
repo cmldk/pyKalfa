@@ -1097,6 +1097,47 @@ def test_tidy_rooms_get_top_floor(tmp):
     check(tops == {2: 3, 3: None}, tops)
 
 
+def _iw(floor, a, b, wid, cm=15, status="olculdu"):
+    w = _pw(floor, a, b, side="interior", status=status, wid=wid)
+    w["thickness_group_cm"] = cm
+    return w
+
+
+@test("proto")
+def test_tidy_merges_collinear_wall_pieces(tmp):
+    # Ornek tarama Kat 3: ayni hatta ic duvar 2 parca (0.54 m + 2.32 m), uclari
+    # 7 mm ust uste -> Revit "walls overlap". Tek duvar olmali; kisa parcadaki
+    # kapi birlesik duvara gecer.
+    import prototype as P
+    long_w = _iw(3, (0, 0.53), (0, 2.85), "long", status="olculdu")
+    short_w = _iw(3, (0, 0.0), (0, 0.537), "short", status="varsayildi")
+    door = {"id": "d1", "floor": 3, "kind": "door", "host_id": "short",
+            "offset_ft": 0.27 * M2FT, "width_ft": 0.2 * M2FT}
+    doc = P.tidy(_proto_doc([long_w, short_w], {3: 0.0}, openings=[door], main_floor=3))
+    check([w["id"] for w in doc["walls"]] == ["p-long"], [w["id"] for w in doc["walls"]])
+    w = doc["walls"][0]
+    ys = sorted([w["start_ft"][1] / M2FT, w["end_ft"][1] / M2FT])
+    check(approx(ys[0], 0.0, 1e-6) and approx(ys[1], 2.85, 1e-6), ys)
+    check(w["status"] == "varsayildi" and any("birlestirildi" in x for x in w["warnings"]), w)
+    o = doc["openings"][0]
+    check(o["host_id"] == "p-long", o)
+    start_y = w["start_ft"][1] / M2FT
+    check(approx(start_y + (o["offset_ft"] / M2FT) * (1 if w["end_ft"][1] > w["start_ft"][1] else -1),
+                 0.27, 1e-6), (o, w))
+
+
+@test("proto")
+def test_tidy_keeps_separate_walls(tmp):
+    import prototype as P
+    walls = [_iw(3, (0, 0), (0, 2), "a"),
+             _iw(3, (0, 2.3), (0, 4), "gap"),                    # 30 cm bosluk: kapi gecisi
+             _iw(3, (0.15, 4.0), (0.15, 6), "offset"),          # 15 cm yana kayik
+             _iw(3, (0, 6.0), (0, 8), "thick", cm=25),          # baska kalinlik
+             _iw(4, (0, 8.0), (0, 9), "other_floor")]
+    doc = P.tidy(_proto_doc(walls, {3: 0.0, 4: 3.0}, main_floor=3))
+    check(len(doc["walls"]) == 5, [w["id"] for w in doc["walls"]])
+
+
 @test("proto")
 def test_openings_follow_and_clamp(tmp):
     import prototype as P
