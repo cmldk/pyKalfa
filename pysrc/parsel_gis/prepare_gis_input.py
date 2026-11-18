@@ -7,9 +7,9 @@
 `--region`: "wal" (Valonya, SPW; varsayilan) ya da "vla" (Flaman, Digitaal
 Vlaanderen). Cikti bicimi bolgeden bagimsizdir.
 
-Cikti bicimi mevcut Parsel/Bina Aktar butonunun `revit_input.json`'u ile
-aynidir (`parcel_lines`, `frame_lines`, `buildings`, `labels`, `north`),
-boylece Revit tarafinda ayni cizim kodu kullanilir.
+Cikti: `revit_input.json` (`parcel_lines`, `frame_lines`, `buildings`,
+`labels`, `north`, yol ve sokak adlari); Revit tarafinda
+`lib/pykalfa/parsel_draw.py` cizer.
 
 Arayuz icin `PROGRESS|yuzde|mesaj`, hata durumunda son satir
 `ERROR|mesaj` basilir ve JSON yazilmaz.

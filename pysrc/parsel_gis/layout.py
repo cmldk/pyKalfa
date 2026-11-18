@@ -1,10 +1,9 @@
 """Parsel-Bina GIS: saf geometri (ag yok).
 
-Girdi: servislerden gelen Esri halkalari (EPSG:31370, metre). Cikti: mevcut
-Parsel/Bina Aktar butonunun `revit_input.json` bicimindeki parcalar.
+Girdi: servislerden gelen halkalar (EPSG:31370, metre). Cikti:
+`revit_input.json` bicimindeki parcalar (Revit tarafi: lib/pykalfa/parsel_draw.py).
 
-Orijin = cercevenin sol-alt kosesi, X saga, Y yukari artar, birim feet --
-mevcut butonla ayni kural (orada orijin parsel.png'nin sol-alt kosesi).
+Orijin = cercevenin sol-alt kosesi, X saga, Y yukari artar, birim feet.
 """
 
 from __future__ import annotations

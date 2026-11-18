@@ -2,7 +2,7 @@ title: Parsel/Bina GIS
 tooltip: >
   Adres veya CaPaKey girip bolgenin GIS servislerinden parsel sinirlarini,
   binalari, yol kenarlarini, sokak adlarini ve parsel numaralarini alir;
-  Parsel/Bina Aktar ile ayni line style, filled region, text note ve kuzey
-  oku secimleriyle aktif view'e cizer. Valonya (SPW) ve Flaman bolgesi
+  secilen line style, filled region, text note ve kuzey oku ile aktif
+  view'e cizer. Valonya (SPW) ve Flaman bolgesi
   (Digitaal Vlaanderen); adres adaylari iki bolgeden ayni listede gelir.
   Goruntu, olcek ve OCR gerekmez. Internet baglantisi gerekir.

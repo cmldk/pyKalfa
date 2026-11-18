@@ -1,16 +1,14 @@
 # Butun islevlerin paylastigi tek sanal ortam (env/).
 # Hangi paketi hangi islev kullaniyor:
 
-# parsel_bina (Parsel/Bina Aktar)
+# parsel_gis (Parsel/Bina GIS) + rolove (Rolove Prototip): onizleme PNG'leri, geometri
 opencv-python-headless>=4.9
-scikit-image>=0.22
 shapely>=2.0
-easyocr>=1.7
 
-# duvar (Duvar Aktar)
+# rolove (Rolove Prototip) - Polycam kat plani DXF'i (pysrc/duvar okuyuculari)
 ezdxf>=1.1
 
-# rolove (Rolove Aktar) - Polycam LAZ nokta bulutu
+# rolove (Rolove Prototip) - Polycam LAZ nokta bulutu
 laspy[lazrs]>=2.5
 
 # ortak

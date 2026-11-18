@@ -53,14 +53,14 @@ def requirements_file():
 
 
 def pysrc_dir(feature):
-    """Bir islevin CPython kodunun bulundugu klasor (ör. "parsel_bina")."""
+    """Bir islevin CPython kodunun bulundugu klasor (ör. "parsel_gis")."""
     return os.path.join(EXTENSION_ROOT, "pysrc", feature)
 
 
 def pysrc_script(feature, script_name):
     """Bir islevin CPython scriptinin tam yolu.
 
-    Ör: `pysrc_script("parsel_bina", "prepare_revit_input.py")`."""
+    Ör: `pysrc_script("parsel_gis", "prepare_gis_input.py")`."""
     return os.path.join(pysrc_dir(feature), script_name)
 
 

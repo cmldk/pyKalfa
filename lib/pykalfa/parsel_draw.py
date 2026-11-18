@@ -1,9 +1,8 @@
 # -*- coding: utf-8 -*-
 """`revit_input.json` -> DetailCurve / FilledRegion / TextNote / kuzey oku.
 
-Parsel/Bina GIS butonu icin. Govde, Parsel/Bina Aktar butonundaki
-(`ImportGeometry.pushbutton/script.py`) cizim blogunun aynisidir; o buton
-bilerek degistirilmedi, bu yuzden kod burada tekrar ediyor.
+Parsel/Bina GIS butonu icin (kaldirilan Parsel/Bina Aktar butonunun
+cizim blogundan turetildi).
 
 Tek Transaction: sonuc begenilmezse Revit'te tek Ctrl+Z ile geri alinir.
 Hata olursa RollBack yapilir ve istisna yeniden firlatilir.
@@ -29,7 +28,7 @@ from pykalfa.revitutils import WarningSwallowerUnjoin, distance, view_elevation
 
 logger = script.get_logger()
 
-# Bu uzunlugun altindaki segmentler atlanir (bkz. ImportGeometry script.py).
+# Bu uzunlugun altindaki segmentler atlanir (Revit cok kisa egri kabul etmez).
 MIN_SEGMENT_LENGTH_FT = 0.05
 
 

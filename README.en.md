@@ -9,8 +9,7 @@ cadastral data, and builds a floored building prototype from a Polycam scan.
 
 | Button | What it does |
 | --- | --- |
-| **Parsel/Bina Aktar** | Turns cadastral images (PNG) into Revit geometry: parcel boundaries as `DetailLine`, buildings as `FilledRegion`, parcel numbers as `TextNote`. |
-| **Parsel/Bina GIS** | In Wallonia and Flanders, fetches parcel boundaries, buildings and parcel numbers from the regional GIS services by address or CaPaKey and draws them with the same styles as Parsel/Bina Aktar. No images or OCR needed. |
+| **Parsel/Bina GIS** | In Wallonia and Flanders, fetches parcel boundaries, buildings and parcel numbers from the regional GIS services by address or CaPaKey and draws them in the active view: parcel boundaries (`DetailLine`), buildings (`FilledRegion`), road edges, street names and parcel numbers (`TextNote`). |
 | **Rölöve Prototip** | Tidied, floored quick prototype from the same Polycam scan: square corners, exterior walls aligned between storeys, a floor slab on every level. |
 
 ## Requirements
@@ -29,64 +28,13 @@ cadastral data, and builds a floored building prototype from a Polycam scan.
 3. **Reload** pyRevit (or restart Revit).
 
 The required Python packages are installed automatically on first
-startup. This takes a few minutes (the OCR library is ~1-1.5 GB) and
-shows a progress bar. It does not run again on later startups.
+startup. This takes a few minutes and shows a progress bar. It does not run again on later startups.
 
 > Optional: you can also download it via **Code → Download ZIP**, rename
 > the folder to `pyKalfa.extension`, and add its **parent** folder under
 > pyRevit → Settings → *Custom Extension Folders*.
 
 ## Usage
-
-### Parsel/Bina Aktar — parcels and buildings
-
-| Input: buildings | Input: parcels | Input: both layers | Output: Revit |
-| :---: | :---: | :---: | :---: |
-| ![Building image](assets/bina.png) | ![Parcel image](assets/parsel.png) | ![Both layers](assets/both.png) | ![Revit output](assets/output_revit_img.png) |
-
-Your own images should look like these examples in `assets/`: three PNGs
-exported from the **same view** of the same cadastral extract, at the
-**same pixel size**, with the scale bar visible.
-
-The third image (both layers) is **not** a source of geometry; it is
-used to align the two layers with each other. The building and parcel
-images are exported separately, so there is no guarantee they show the
-same frame — and a shifted parcel-to-building match does not look like
-an error in the output. The third image removes that ambiguity; if the
-alignment cannot be verified you get a warning.
-
-1. Switch to a **plan, detail, section or elevation** view (it does not
-   work in 3D views).
-2. **pyKalfa** → **Parsel / Bina** → **Parsel/Bina Aktar**.
-3. Provide the inputs as they are requested:
-   - select the image with the **buildings only** (PNG)
-   - select the image with the **parcels only** (PNG)
-   - select the image with **both layers** (PNG)
-   - enter the map scale denominator (`500` for 1:500)
-   - pick a **Line Style** for parcel boundaries
-   - pick a separate **Line Style** for the drawing frame (the outer
-     border of the image) — choose the *"Cerceve cizme"* entry at the
-     top of the list if you do not want a frame
-   - pick a **Filled Region Type** for building units
-   - pick a **Text Note Type** for parcel numbers
-   - pick a **Generic Annotation** symbol for the north arrow — choose
-     the *"Kuzey oku ekleme"* entry at the top of the list to skip it
-4. Image processing runs behind a progress bar; you are not asked
-   anything during this step.
-5. The geometry is drawn and a summary of created elements appears.
-
-> The north arrow, scale bar and credit line at the bottom of the image
-> are not imported as geometry. Only the north arrow's **position and
-> direction** are measured; the project's own symbol is placed there,
-> turned the same way.
-
-> In terraced blocks **each unit becomes its own Filled Region**, so the
-> party walls between units are preserved. Two neighbouring units share
-> the exact same edge, pixel for pixel, so no gap is left between them.
-
-> Parcel numbers are read with OCR, which is about 80% accurate. Similar
-> characters (G/6, A/4, B/8, S/5) may be confused — compare the result
-> with the source image and correct it manually if needed.
 
 ### Parsel/Bina GIS — parcels and buildings from the geoportal
 
@@ -118,7 +66,7 @@ Parcel numbers are decoded from the CaPaKey in both regions.
    - a separate line style for the **selected parcel's outer boundary**
      (if skipped, the other parcels' style is used; its number is written
      like the others)
-   - the **same style choices** as Parsel/Bina Aktar: parcel lines, frame
+   - the **style choices**: parcel lines, frame
      (or *"Cerceve cizme"*), road and sidewalk edges (or *"Yol cizme"*),
      Text Note Type for street names (or *"Sokak adi yazma"*), building
      Filled Region Type, parcel number
@@ -128,8 +76,8 @@ Parcel numbers are decoded from the CaPaKey in both regions.
 
 > The drawing area is the selected parcel's bounding box grown by the
 > margin; the frame is that rectangle, and neighbouring parcels and
-> buildings that cross it are clipped at the frame. As in Parsel/Bina
-> Aktar, the origin is the frame's bottom-left corner; the data is
+> buildings that cross it are clipped at the frame. The origin is the
+> frame's bottom-left corner; the data is
 > north-up, so the north arrow is placed at 0°.
 
 > Road and sidewalk edges come from the PICC "Voirie - Ligne" layer (road

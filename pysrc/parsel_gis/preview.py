@@ -1,7 +1,7 @@
 """Parsel-Bina GIS: dogrulama gorseli (`revit_input_preview.png`).
 
 Girdi DEGILDIR; yalniz Revit'e bakmadan "dogru yer mi geldi" kontrolu
-icindir. Renkler mevcut `pysrc/parsel_bina/preview.py` ile aynidir.
+icindir.
 """
 
 from __future__ import annotations

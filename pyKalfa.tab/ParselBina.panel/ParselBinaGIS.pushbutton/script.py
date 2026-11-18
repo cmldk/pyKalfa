@@ -1,8 +1,7 @@
 # -*- coding: utf-8 -*-
 """pyKalfa / Parsel-Bina GIS: adres veya CaPaKey -> bolge GIS verisi -> Revit
 
-Parsel/Bina Aktar ile ayni cizimi, kadastro goruntuleri yerine bolge
-servislerinin dondurdugu veriden yapar. Valonya: SPW (CADMAP parsel, PICC
+Parsel/bina cizimini bolge servislerinin dondurdugu veriden yapar. Valonya: SPW (CADMAP parsel, PICC
 bina/yol). Flaman: Digitaal Vlaanderen (Adpf parsel, GRB bina/yol). Adres
 adaylari iki bolgeden ayni listede gelir; secilen adayin bolgesi
 (`region`) hazirliga iletilir. OCR, olcek ve hizalama yoktur.
@@ -46,7 +45,7 @@ PRECISION_LABELS = {
     "capakey": u"CaPaKey",
 }
 REGION_LABELS = {"wal": u"Valonya", "vla": u"Flaman"}
-# Bkz. ImportGeometry script.py: asama icinde cubuk yavasca ilerletilir.
+# Uzun asamalarda cubuk donmus gorunmesin diye yavasca ilerletilir.
 PROGRESS_CREEP_LIMIT = 18
 PROGRESS_CREEP_EVERY = 5
 
@@ -179,7 +178,7 @@ def ask_margin():
 location, address_label = ask_location()
 margin_m = ask_margin()
 
-# --- 3) Stil secimleri (Parsel/Bina Aktar ile ayni sira ve basliklar) ---------
+# --- 3) Stil secimleri -------------------------------------------------------
 try:
     chosen_line_style = selectors.pick_line_style(
         doc, title="Parsel çizgileri için line style seçin"
