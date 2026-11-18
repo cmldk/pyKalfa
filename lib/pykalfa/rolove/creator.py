@@ -749,7 +749,12 @@ def create_all(doc, app, data, choices):
     if data.get("floors") and choices.floor_type is not None:
         from pykalfa.rolove import floors as floors_mod
         stages = stages[:4] + (("doseme", lambda: floors_mod.stage_floors(ctx)),) + stages[4:]
-    title = "Rolove Prototip" if data.get("prototype") else "Rolove Aktar"
+    if data.get("room_separations"):
+        # Odalardan ONCE: acik plandaki odalar ayrilsin ("Redundant Room" olmasin).
+        from pykalfa.rolove import separations as sep_mod
+        i = [n for n, _ in stages].index("odalar")
+        stages = stages[:i] + (("oda ayiricilari", lambda: sep_mod.stage_separations(ctx)),) + stages[i:]
+    title ="Rolove Prototip" if data.get("prototype") else "Rolove Aktar"
     group = TransactionGroup(doc, "pyKalfa: {}".format(title))
     group.Start()
     try:
@@ -799,7 +804,7 @@ def preview_plan(doc, data):
     led = storage.get_ledger(doc)
     items = led["items"]
     existing = set(uid for uid in items.values() if _alive(doc, uid))
-    ids = [x["id"] for k in ("levels", "walls", "openings", "rooms", "floors")
+    ids = [x["id"] for k in ("levels", "walls", "openings", "rooms", "floors", "room_separations")
            for x in data.get(k, [])]
     plan = ledger_mod.plan_actions(ids, items, existing)
     key = (data.get("source") or {}).get("key")

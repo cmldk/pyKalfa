@@ -1039,6 +1039,55 @@ def test_tidy_keeps_t_junction_on_wall(tmp):
     check(approx(t["start_ft"][1], bottom["start_ft"][1], 1e-6), (t["start_ft"], bottom))
 
 
+def _seg_len_m(s):
+    return math.dist(s["start_ft"], s["end_ft"]) / M2FT
+
+
+@test("proto")
+def test_room_separation_on_open_shared_edge(tmp):
+    # Acik plan: 10x8 dikdortgen, x=5'te duvarsiz iki oda (Polycam boyle
+    # cizer). Revit tek alan sayip birini "Redundant Room" yapiyordu.
+    import prototype as P
+    rooms = [_room(2, 0, 0, 5, 8, "Kitchen 1"), _room(2, 5, 0, 10, 8, "Living Room 1")]
+    doc = P.tidy(_proto_doc(_rect_walls(2, 0, 0, 10, 8), {2: 0.0}, rooms=rooms))
+    seps = doc["room_separations"]
+    check(len(seps) == 1, seps)
+    s = seps[0]
+    check(s["floor"] == 2 and s["id"].startswith("p-sep-2-"), s)
+    check(approx(s["start_ft"][0], 5 * M2FT, 1e-6) and approx(s["end_ft"][0], 5 * M2FT, 1e-6), s)
+    ys = sorted([s["start_ft"][1] / M2FT, s["end_ft"][1] / M2FT])
+    check(ys[0] <= 0.0 + 1e-6 and ys[1] >= 8.0 - 1e-6, ys)          # duvarlara kadar uzar
+
+
+@test("proto")
+def test_room_separation_not_where_wall_exists(tmp):
+    import prototype as P
+    rooms = [_room(2, 0, 0, 5, 8, "A"), _room(2, 5, 0, 10, 8, "B")]
+    walls = _rect_walls(2, 0, 0, 10, 8) + [_pw(2, (5, 0), (5, 8), side="interior")]
+    doc = P.tidy(_proto_doc(walls, {2: 0.0}, rooms=rooms))
+    check(doc["room_separations"] == [], doc["room_separations"])
+
+
+@test("proto")
+def test_room_separation_partial_wall_and_other_floors(tmp):
+    # Ortak kenarin yalniz 3 m'si duvarli: kalan 5 m icin ayirici; baska
+    # kattaki duvar sayilmaz.
+    import prototype as P
+    rooms = [_room(2, 0, 0, 5, 8, "A"), _room(2, 5, 0, 10, 8, "B")]
+    walls = _rect_walls(2, 0, 0, 10, 8) + [_pw(2, (5, 0), (5, 3), side="interior"),
+                                           _pw(3, (5, 3), (5, 8), side="interior")]
+    doc = P.tidy(_proto_doc(walls, {2: 0.0, 3: 3.0}, rooms=rooms))
+    seps = doc["room_separations"]
+    check(len(seps) == 1 and 5.0 <= _seg_len_m(seps[0]) <= 5.0 + 2 * 0.35, seps)
+
+
+@test("proto")
+def test_room_separation_none_for_walled_rooms(tmp):
+    import prototype as P
+    doc = P.tidy(_proto_doc(_rect_walls(2, 0, 0, 10, 8), {2: 0.0}, rooms=[_room(2, 0, 0, 10, 8)]))
+    check(doc["room_separations"] == [], doc["room_separations"])
+
+
 @test("proto")
 def test_tidy_rooms_get_top_floor(tmp):
     import prototype as P

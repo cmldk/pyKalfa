@@ -401,12 +401,79 @@ def tidy(doc: dict) -> dict:
     for lv in doc.get("levels") or []:
         lv["name"] = "Kat {} (Prototip)".format(lv["floor"])
 
+    doc["room_separations"] = room_separations(doc)
+
     info = {"theta_deg": round(math.degrees(theta), 3), "orthogonalized": n_orth,
             "stacked": n_stack, "skipped": [ID_PREFIX + s for s in skipped],
-            "params": params()}
+            "separations": len(doc["room_separations"]), "params": params()}
     doc["prototype"] = info
     doc.setdefault("params", {})["prototype"] = params()
     return doc
+
+
+# --------------------------------------------------------------------------
+# Oda ayiricilari (Room Separation Line)
+# --------------------------------------------------------------------------
+
+SEP_WALL_COVER_M = 0.25     # oda kenari bir duvar hattina bu kadar yakinsa duvarli sayilir
+SEP_MIN_M = 0.30            # bundan kisa duvarsiz parca icin ayirici konmaz
+SEP_DUP_M = 0.05            # iki odanin ortak kenari tek ayirici
+SEP_EXTEND_M = SEP_WALL_COVER_M + 0.05   # uclar duvarin icine kadar uzatilir
+
+
+def _line_parts(g):
+    if g.is_empty:
+        return []
+    if g.geom_type == "LineString":
+        return [g]
+    return [p for p in getattr(g, "geoms", []) if p.geom_type == "LineString"]
+
+
+def room_separations(doc) -> list:
+    """Polycam acik plani (mutfak + salon gibi) duvarsiz iki oda olarak
+    cizer; Revit duvarla ayrilmamis odalari tek alan sayip birini "Redundant
+    Room" yapar. Oda poligon kenarlarinin hicbir duvar hattina
+    `SEP_WALL_COVER_M` yakin olmayan parcalari ayirici olur; iki odanin ortak
+    kenari tek cizgi; uclar `SEP_EXTEND_M` uzatilir ki duvara degsin.
+    [{"id", "floor", "start_ft", "end_ft"}]"""
+    from shapely.geometry import LineString
+    from shapely.ops import unary_union
+
+    ft = config.FT
+    out = []
+    for f in sorted({r["floor"] for r in doc.get("rooms") or []}):
+        walls = [LineString(_line(w)) for w in doc.get("walls") or []
+                 if w["floor"] == f and _length(w) > 1e-9]
+        cover = unary_union([w.buffer(SEP_WALL_COVER_M * ft) for w in walls]) if walls else None
+        accepted = []
+        for r in doc.get("rooms") or []:
+            pts = [tuple(p) for p in r.get("polygon_ft") or []]
+            if r["floor"] != f or len(pts) < 3:
+                continue
+            for a, b in zip(pts, pts[1:] + pts[:1]):
+                if math.dist(a, b) <= 1e-9:
+                    continue
+                edge = LineString([a, b])
+                rest = edge.difference(cover) if cover is not None else edge
+                for part in _line_parts(rest):
+                    if part.length < SEP_MIN_M * ft:
+                        continue
+                    if any(part.difference(x.buffer(SEP_DUP_M * ft)).length < SEP_DUP_M * ft
+                           for x in accepted):
+                        continue
+                    accepted.append(part)
+        segs = []
+        for part in accepted:
+            (x1, y1), (x2, y2) = part.coords[0], part.coords[-1]
+            seg = ((x1, y1), (x2, y2))
+            ux, uy = geom2d.seg_dir(seg)
+            d = SEP_EXTEND_M * ft
+            segs.append(((x1 - ux * d, y1 - uy * d), (x2 + ux * d, y2 + uy * d)))
+        segs.sort(key=lambda s: (round(s[0][0], 2), round(s[0][1], 2), round(s[1][0], 2)))
+        for k, (a, b) in enumerate(segs):
+            out.append({"id": "{}sep-{}-{}".format(ID_PREFIX, f, k), "floor": f,
+                        "start_ft": [float(a[0]), float(a[1])], "end_ft": [float(b[0]), float(b[1])]})
+    return out
 
 
 # --------------------------------------------------------------------------
@@ -559,8 +626,11 @@ def render_floor(doc, floor, path):
         a = _point_at(_line(host), o["offset_ft"] - half)
         b = _point_at(_line(host), o["offset_ft"] + half)
         cv2.line(img, px(a), px(b), preview.OPENING_COLOR, stroke + 2, cv2.LINE_AA)
+    for s in doc.get("room_separations") or []:
+        if s["floor"] == floor:
+            cv2.line(img, px(s["start_ft"]), px(s["end_ft"]), (200, 0, 200), 2, cv2.LINE_AA)
     cv2.putText(img, "Kat {} PROTOTIP  yesil=olculdu  turuncu=duzeltildi  kirmizi=varsayildi  "
-                "siyah=doseme izi".format(floor), (8, 18), cv2.FONT_HERSHEY_SIMPLEX, 0.45,
+                "siyah=doseme izi  mor=oda ayirici".format(floor), (8, 18), cv2.FONT_HERSHEY_SIMPLEX, 0.45,
                 (0, 0, 0), 1, cv2.LINE_AA)
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)

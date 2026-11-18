@@ -15,7 +15,7 @@ from pykalfa.selectors import pick_by_name
 
 TITLE = "Rolove Prototip"
 PREFIX = "p-"
-REPORT_KINDS = ("level", "wall", "floor", "door", "window", "opening", "room")
+REPORT_KINDS = ("level", "wall", "floor", "door", "window", "opening", "separation", "room")
 
 
 def rolove_conflicts(doc):
