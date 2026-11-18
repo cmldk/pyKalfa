@@ -19,6 +19,7 @@ from pyrevit import forms, script
 
 from pykalfa.revitutils import elem_name
 from pykalfa.rolove import inputs
+from pykalfa.rolove import creator
 from pykalfa.rolove.creator import Choices
 from pykalfa.selectors import _symbol_label, pick_by_name
 
@@ -216,11 +217,17 @@ def pick_choices(doc, data):
         types, "Dis duvar tipi (taranan ic yuzden disa dogru kalinlasir)",
         "Projede tanimli bir Wall Type bulunamadi.", label_fn=_wall_label)
     group_types = {}
+    new_group_types = {}
     for g in data.get("thickness_groups") or []:
-        group_types[g["cm"]] = pick_by_name(
+        name = creator.inner_type_name(g["cm"])
+        chosen = pick_by_name(
             types, "Ic duvar ~{} cm ({} duvar, {} tanesi taramadan olculdu)".format(
                 g["cm"], g["count"], g.get("measured", 0)),
-            "Projede tanimli bir Wall Type bulunamadi.", label_fn=_wall_label)
+            "Projede tanimli bir Wall Type bulunamadi.",
+            skip_label="-- Yeni tip olustur: {} --".format(name), label_fn=_wall_label)
+        group_types[g["cm"]] = chosen
+        if chosen is None:
+            new_group_types[g["cm"]] = name
     kinds = Counter(o["kind"] for o in data.get("openings", []))
     door = window = None
     if kinds.get("door"):
@@ -233,7 +240,7 @@ def pick_choices(doc, data):
             _symbols(doc, BuiltInCategory.OST_Windows),
             "Pencere ailesi ({} pencere)".format(kinds["window"]),
             "", skip_label="Opening kullan", label_fn=_symbol_label)
-    return Choices(exterior, group_types, door, window)
+    return Choices(exterior, group_types, door, window, new_group_types=new_group_types)
 
 
 def _status_text(status):

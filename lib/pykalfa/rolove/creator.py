@@ -73,7 +73,7 @@ class Choices(object):
     """Kullanici secimleri (ui.pick_choices doldurur)."""
 
     def __init__(self, exterior_type, group_types, door_symbol=None, window_symbol=None,
-                 level_overrides=None, floor_type=None):
+                 level_overrides=None, floor_type=None, new_group_types=None):
         self.exterior_type = exterior_type
         self.group_types = group_types or {}
         self.door_symbol = door_symbol
@@ -82,10 +82,49 @@ class Choices(object):
         # Yalniz Rolove Prototip: doseme tipi. None = doseme yok, duvarlar
         # eskisi gibi baglantisiz (Rolove Aktar davranisi).
         self.floor_type = floor_type
+        # {kalinlik cm: tip adi}: kullanici "Yeni tip olustur" dedi; tip
+        # duvarlardan once dis duvar tipinden kopyalanip olusturulur.
+        self.new_group_types = new_group_types or {}
 
     @property
     def floor_thickness_ft(self):
         return floor_type_thickness_ft(self.floor_type)
+
+
+def inner_type_name(cm):
+    return "Prototip Ic Duvar {} cm".format(int(cm))
+
+
+def _stage_wall_types(ctx):
+    """Olculen kalinlikta tip yoksa: dis duvar tipinden kopya, tek katmanli
+    (tasiyici), tam olculen kalinlikta. Ayni adli tip varsa o kullanilir
+    (yeniden calistirmada tip cogalmaz)."""
+    from Autodesk.Revit.DB import CompoundStructure, ElementId, MaterialFunctionAssignment, WallType
+    base = ctx.choices.exterior_type
+    existing = dict((elem_name(t), t) for t in FilteredElementCollector(ctx.doc).OfClass(WallType))
+    material = ElementId.InvalidElementId
+    try:
+        cs = base.GetCompoundStructure()
+        if cs is not None and cs.LayerCount > 0:
+            i = cs.GetFirstCoreLayerIndex()
+            material = cs.GetMaterialId(i if i >= 0 else 0)
+    except Exception:  # noqa: BLE001 - malzemesiz tip de olur
+        pass
+    for cm, name in sorted(ctx.choices.new_group_types.items()):
+        wt = existing.get(name)
+        try:
+            if wt is None:
+                wt = base.Duplicate(name)
+                wt.SetCompoundStructure(CompoundStructure.CreateSingleLayerCompoundStructure(
+                    MaterialFunctionAssignment.Structure, float(cm) / 100.0 * FT_PER_M, material))
+                ctx.report.add("created", "wall type", name)
+            else:
+                ctx.report.add("kept", "wall type", name)
+            ctx.choices.group_types[cm] = wt
+        except Exception as ex:  # noqa: BLE001 - tip olmazsa duvar dis tiple olusur
+            ctx.report.add("failed", "wall type", name, str(ex))
+            ctx.report.warnings.append(u"{} olusturulamadi ({}); o gruptaki duvarlar baska "
+                                       u"tiple olusur".format(name, ex))
 
 
 def floor_type_thickness_ft(floor_type):
@@ -307,7 +346,7 @@ def _wall_type_for(ctx, w):
             top = max(groups, key=lambda g: g["count"])["cm"]
             t = ctx.choices.group_types.get(top)
         if t is None:
-            t = list(ctx.choices.group_types.values())[0]
+            t = next((v for v in ctx.choices.group_types.values() if v is not None), None)
     return t or ctx.choices.exterior_type
 
 
@@ -740,6 +779,7 @@ def create_all(doc, app, data, choices):
     stages = (
         ("parametreler", lambda: setattr(ctx, "param_names", params.ensure_parameters(doc, app))),
         ("Level", lambda: _stage_levels(ctx)),
+        ("duvar tipleri", lambda: _stage_wall_types(ctx)),
         ("duvarlar", lambda: _stage_walls(ctx)),
         ("birlesimler", None),             # kendi islemlerini yonetir (_join_walls)
         ("acikliklar", lambda: _stage_openings(ctx)),
@@ -748,7 +788,8 @@ def create_all(doc, app, data, choices):
     )
     if data.get("floors") and choices.floor_type is not None:
         from pykalfa.rolove import floors as floors_mod
-        stages = stages[:4] + (("doseme", lambda: floors_mod.stage_floors(ctx)),) + stages[4:]
+        i = [n for n, _ in stages].index("birlesimler") + 1
+        stages = stages[:i] + (("doseme", lambda: floors_mod.stage_floors(ctx)),) + stages[i:]
     if data.get("room_separations"):
         # Odalardan ONCE: acik plandaki odalar ayrilsin ("Redundant Room" olmasin).
         from pykalfa.rolove import separations as sep_mod
