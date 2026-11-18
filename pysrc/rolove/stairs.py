@@ -35,6 +35,7 @@ MIN_POINTS_PER_TREAD = 10
 MIN_MEASURED_TREADS = 3
 MIN_RISE_M = 0.5                          # olculen toplam yukselme bundan azsa yon belirsiz
 MAX_RISER_M = 0.26                        # kati bundan yuksek rihtle asan "merdiven" kurulmaz
+DEFAULT_RISER_M = 0.18                    # yukselmesi olculemeyen ara merdiven icin
 ID_PREFIX = "p-"
 
 
@@ -170,13 +171,20 @@ def orient(strip, points, floor_z, top_z):
     if slope < 0:
         s["start"], s["end"] = s["end"], s["start"]
     s["direction_status"] = "olculdu"
+    s["rise_m"] = round(abs(slope) * (s["treads"] + 1), 3)     # olculen toplam yukselme
     return s
 
 
 def records(strips_by_floor, levels, warnings=None):
-    """JSON kayitlari; yalniz ustunde kat olan ve o kati makul rihtle
-    (<= MAX_RISER_M) asabilen merdivenler. Digerleri `warnings`'e yazilir
-    (ör. birkac basamakli ara merdiven, yarim taranmis merdiven)."""
+    """JSON kayitlari; yalniz ustunde kat olan merdivenler.
+
+    - "full": kati makul rihtle (<= MAX_RISER_M) asiyor -> alt kattan ust kata.
+    - "partial": kati asamiyor ama taramada olculen yukselme (`rise_m`) makul
+      rihtli -> alt kattan baslar, ust ofseti (yukselme - kat yuksekligi)
+      negatif; ör. birkac basamakli ara merdiven.
+    - kati asamiyor ve yukselme olculemedi: DEFAULT_RISER_M rihtle "partial",
+      `height_status` "varsayildi".
+    - olculen yukselme cok dik (> MAX_RISER_M riht): `warnings`'e, kurulmaz."""
     import prototype
     tops = prototype.top_floors(levels)
     elev = {lv["floor"]: float(lv["elevation_m"]) for lv in levels}
@@ -191,16 +199,28 @@ def records(strips_by_floor, levels, warnings=None):
                     warnings.append("Kat {}: {} basamakli merdiven ustte kat olmadigi icin "
                                     "kurulmadi".format(f, s["treads"]))
                 continue
-            riser = (elev.get(top, 0.0) - elev.get(f, 0.0)) / (s["treads"] + 1)
-            if riser > MAX_RISER_M:
+            storey = elev.get(top, 0.0) - elev.get(f, 0.0)
+            risers = s["treads"] + 1
+            riser = storey / risers
+            rise = s.get("rise_m")
+            if riser <= MAX_RISER_M:
+                kind, height, h_status = "full", storey, "olculdu"
+            elif rise and rise < storey and rise / risers <= MAX_RISER_M:
+                kind, height, h_status = "partial", float(rise), "olculdu"
+            elif not rise and risers * DEFAULT_RISER_M < storey:
+                kind, height, h_status = "partial", risers * DEFAULT_RISER_M, "varsayildi"
+            else:
                 if warnings is not None:
                     warnings.append(
                         "Kat {}: {} basamakli merdiven Kat {}'e {:.2f} m rihtle ulasir (en fazla "
-                        "{:.2f}); ara merdiven ya da yarim taranmis, kurulmadi".format(
-                            f, s["treads"], top, riser, MAX_RISER_M))
+                        "{:.2f}), taramada {:.2f} m yukseliyor; kurulmadi".format(
+                            f, s["treads"], top, riser, MAX_RISER_M, rise or 0.0))
                 continue
             k += 1
             out.append({
+                "kind": kind, "height_m": round(height, 3), "height_status": h_status,
+                "top_offset_ft": 0.0 if kind == "full" else (height - storey) * ft,
+                "depth_ft": s["depth_m"] * ft,
                 "id": "{}stairs-{}-{}".format(ID_PREFIX, f, k - 1), "floor": f, "top_floor": top,
                 "start_ft": [s["start"][0] * ft, s["start"][1] * ft],
                 "end_ft": [s["end"][0] * ft, s["end"][1] * ft],

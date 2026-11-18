@@ -1377,6 +1377,7 @@ def test_direction_from_points(tmp):
     strip = S.find_strips(_stair_lines())[0]
     up = S.orient(strip, _stair_points(strip, 0.0, 0.18, up=True), 0.0, 3.0)
     check(up["direction_status"] == "olculdu" and approx(up["start"][1], 1.0, 1e-6), up)
+    check(approx(up["rise_m"], 0.18 * 8, 0.05), up)                     # 8 riht x 18 cm
     down = S.orient(strip, _stair_points(strip, 0.0, 0.18, up=False), 0.0, 3.0)
     check(down["direction_status"] == "olculdu" and approx(down["start"][1], 2.75, 1e-6), down)
     none = S.orient(strip, _stair_points(strip, 0.0, 0.18)[:0], 0.0, 3.0)
@@ -1396,17 +1397,42 @@ def test_stairs_records_need_upper_level(tmp):
 
 
 @test("stairs")
-def test_stairs_skipped_when_too_few_treads_for_storey(tmp):
-    # Ornek tarama Kat 2: 3 basamakli ara merdiven 3.00 m kati asamaz
-    # (riht 0.75 m); kurulmaz, nedeni uyarida.
+def test_short_unmeasured_stair_assumes_riser(tmp):
+    # Ornek tarama Kat 2: 3 basamakli ara merdiven 3.00 m kati asamaz ve
+    # yukselmesi taramadan olculemedi -> 18 cm varsayilan rihtle kismi
+    # merdiven (4 x 0.18 = 0.72 m), yukseklik "varsayildi".
     import stairs as S
     short = S.orient(S.find_strips(_stair_lines(n_lines=4))[0], None, 0.0, 3.0)
     full = S.orient(S.find_strips(_stair_lines(n_lines=15))[0], None, 0.0, 3.0)
     levels = [{"floor": 2, "elevation_m": 0.0}, {"floor": 3, "elevation_m": 3.0}]
     warnings = []
     recs = S.records({2: [short, full]}, levels, warnings)
-    check([r["treads"] for r in recs] == [14], recs)
-    check(len(warnings) == 1 and "Kat 2" in warnings[0] and "0.75" in warnings[0], warnings)
+    check(sorted(r["treads"] for r in recs) == [3, 14] and warnings == [], (recs, warnings))
+    by = {r["treads"]: r for r in recs}
+    check(by[14]["kind"] == "full" and by[14]["top_offset_ft"] == 0.0
+          and by[14]["height_status"] == "olculdu", by[14])
+    check(by[3]["kind"] == "partial" and approx(by[3]["height_m"], 0.72, 1e-6)
+          and by[3]["height_status"] == "varsayildi", by[3])
+
+
+@test("stairs")
+def test_partial_stair_uses_measured_rise(tmp):
+    # Ornek tarama Kat 2: 7 basamakli merdiven 3.00 m kati asamaz ama
+    # taramada 1.60 m yukseliyor -> ust ofseti -1.40 m olan kismi merdiven.
+    import stairs as S
+    strip = S.orient(S.find_strips(_stair_lines(n_lines=8))[0], None, 0.0, 3.0)
+    strip["rise_m"], strip["direction_status"] = 1.60, "olculdu"
+    levels = [{"floor": 2, "elevation_m": 0.0}, {"floor": 3, "elevation_m": 3.0}]
+    warnings = []
+    recs = S.records({2: [strip]}, levels, warnings)
+    check(len(recs) == 1 and warnings == [], (recs, warnings))
+    r = recs[0]
+    check(r["kind"] == "partial" and approx(r["height_m"], 1.60, 1e-6)
+          and r["height_status"] == "olculdu", r)
+    check(approx(r["top_offset_ft"], -1.40 * M2FT, 1e-6), r)
+    check(approx(r["depth_ft"], 0.25 * M2FT, 1e-6), r)
+    steep = dict(strip, rise_m=2.5)                                      # 0.31 m riht
+    check(S.records({2: [steep]}, levels, []) == [])
 
 
 @test("stairs")

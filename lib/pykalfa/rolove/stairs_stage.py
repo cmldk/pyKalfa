@@ -10,7 +10,7 @@ biri patlarsa iptal edilir, raporlanir, digerleri devam eder.
 IronPython 2.7.
 """
 
-from Autodesk.Revit.DB import Line, StairsEditScope, Transaction, XYZ
+from Autodesk.Revit.DB import BuiltInParameter, Line, StairsEditScope, Transaction, XYZ
 from Autodesk.Revit.DB.Architecture import StairsRun, StairsRunJustification
 
 
@@ -49,7 +49,16 @@ def stage_stairs(ctx, recorder_cls):
             stairs = ctx.doc.GetElement(stairs_id)
             if stairs_type is not None:
                 stairs.ChangeTypeId(stairs_type.Id)
+            # Kismi (ara) merdiven: ust kata kadar degil, olculen/varsayilan
+            # yukseklikte biter (ust ofset negatif).
+            top_offset = float(s.get("top_offset_ft") or 0.0)
+            if abs(top_offset) > 1e-6:
+                stairs.get_Parameter(BuiltInParameter.STAIRS_TOP_OFFSET).Set(top_offset)
             stairs.DesiredRisersNumber = int(s["treads"]) + 1
+            # Basamak derinligi tipten degil taramadan: yoksa kol uzunlugu
+            # riht sayisina yetmez ("cannot reach the top elevation").
+            if s.get("depth_ft"):
+                stairs.ActualTreadDepth = float(s["depth_ft"])
             z = base.Elevation
             path = Line.CreateBound(_xyz(s["start_ft"], z), _xyz(s["end_ft"], z))
             run = StairsRun.CreateStraightRun(ctx.doc, stairs_id, path, StairsRunJustification.Center)
@@ -65,5 +74,13 @@ def stage_stairs(ctx, recorder_cls):
             ctx.items.pop(sid, None)
             ctx.report.add("failed", "stairs", sid, str(ex))
             continue
-        note = "" if s.get("direction_status") == "olculdu" else " (cikis yonu varsayildi)"
-        ctx.report.add("created", "stairs", sid, note.strip())
+        notes = []
+        if s.get("kind") == "partial":
+            notes.append("ara merdiven, {:.2f} m".format(float(s.get("height_m") or 0.0)))
+        if s.get("height_status") == "varsayildi":
+            notes.append("yukseklik varsayildi (18 cm riht)")
+        if s.get("direction_status") != "olculdu":
+            notes.append("cikis yonu varsayildi")
+        ctx.report.add("created", "stairs", sid, "; ".join(notes))
+        if notes:
+            ctx.report.warnings.append(u"Merdiven {}: {}".format(sid, "; ".join(notes)))
