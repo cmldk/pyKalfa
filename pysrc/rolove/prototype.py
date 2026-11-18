@@ -640,6 +640,18 @@ def render_floor(doc, floor, path):
                       (200, 160, 0), 2, cv2.LINE_AA)
         cv2.arrowedLine(img, px((sx, sy)), px((ex, ey)), (200, 160, 0), 2, cv2.LINE_AA,
                         tipLength=0.15)
+        if st.get("kind") == "turn":
+            # Donus karesi + donusten once / sonra yon (L ok).
+            (cx, cy), w = st["corner_ft"], st["width_ft"]
+            u1, u2 = st["u1"], st["u2"]
+            sq = [(cx + (a * u1[0] + b * u2[0]) * w / 2.0, cy + (a * u1[1] + b * u2[1]) * w / 2.0)
+                  for a, b in ((-1, -1), (1, -1), (1, 1), (-1, 1))]
+            cv2.polylines(img, [np.array([px(p) for p in sq], dtype=np.int32)], True,
+                          (200, 160, 0), 1, cv2.LINE_AA)
+            a = (cx - u1[0] * w, cy - u1[1] * w)
+            b = (cx + u2[0] * w, cy + u2[1] * w)
+            cv2.line(img, px(a), px((cx, cy)), (200, 160, 0), 2, cv2.LINE_AA)
+            cv2.arrowedLine(img, px((cx, cy)), px(b), (200, 160, 0), 2, cv2.LINE_AA, tipLength=0.3)
     cv2.putText(img, "Kat {} PROTOTIP  yesil=olculdu  turuncu=duzeltildi  kirmizi=varsayildi  "
                 "siyah=doseme izi  mor=oda ayirici  camgobegi=merdiven (ok: cikis)".format(floor), (8, 18), cv2.FONT_HERSHEY_SIMPLEX, 0.45,
                 (0, 0, 0), 1, cv2.LINE_AA)

@@ -1460,6 +1460,60 @@ def test_place_run_prefers_inside(tmp):
     check(C.place_run(3.0, 2.5, 5.0, 5.0) == (0.0, 0.0))                 # uzatma gerekmiyor
 
 
+def _pt_on_chain(pt, chain, tol=1e-6):
+    for a, b in zip(chain, chain[1:]):
+        ab = math.dist(a, b)
+        if abs(math.dist(a, pt) + math.dist(pt, b) - ab) <= tol:
+            return True
+    return False
+
+
+@test("stairs")
+def test_winder_layout_quarter_turn(tmp):
+    # Kos +y (u1), donus sola, -x yonune (u2); kose merkezi (0, 0), genislik
+    # 1 m, 4 duz basamak + 3 yelpaze + 2 duz, basamak 0.25 m.
+    C = _stairs_calc()
+    lay = C.winder_layout((0.0, 0.0), (0.0, 1.0), (-1.0, 0.0), 1.0, 4, 3, 2, 0.25)
+    inner, outer, risers, path = lay["inner"], lay["outer"], lay["risers"], lay["path"]
+    check(len(risers) == 4 + 3 + 2 + 1, len(risers))               # basamak + 1
+    pivot = (-0.5, -0.5)                                             # ic kose
+    check(approx(math.dist(inner[1], pivot), 0.0, 1e-9), inner)
+    fan = [r for r in risers if approx(math.dist(r[0], pivot), 0.0, 1e-9)]
+    check(len(fan) == 3 + 1, fan)                                    # giris + 2 ara + cikis
+    for a, b in risers:                                              # her riht iki sinir arasinda
+        check(_pt_on_chain(a, inner) and _pt_on_chain(b, outer), (a, b))
+    check(not any(approx(math.dist(x, y), 0.0, 1e-9) for x in inner for y in outer))
+    check(approx(math.dist(path[0], (0.0, -0.5 - 4 * 0.25)), 0.0, 1e-9), path[0])
+    check(any(approx(math.dist(q, (0.0, 0.0)), 0.0, 1e-9) for q in path), path)
+    check(approx(math.dist(path[-1], (-0.5 - 2 * 0.25, 0.0)), 0.0, 1e-9), path[-1])
+
+
+@test("stairs")
+def test_winder_layout_right_turn_and_no_second_run(tmp):
+    C = _stairs_calc()
+    lay = C.winder_layout((0.0, 0.0), (0.0, 1.0), (1.0, 0.0), 1.0, 5, 3, 0, 0.25)
+    check(len(lay["risers"]) == 5 + 3 + 1, len(lay["risers"]))
+    check(approx(math.dist(lay["inner"][1], (0.5, -0.5)), 0.0, 1e-9), lay["inner"])
+    check(approx(math.dist(lay["path"][-1], (0.5, 0.0)), 0.0, 1e-9), lay["path"])
+    for a, b in lay["risers"]:
+        check(_pt_on_chain(a, lay["inner"]) and _pt_on_chain(b, lay["outer"]), (a, b))
+
+
+@test("stairs")
+def test_split_treads_prefers_space(tmp):
+    C = _stairs_calc()
+    # 18 riht = 17 basamak; 3 yelpaze, 7 taranan duz -> 7 eksik. Altta 1.0 m
+    # (4 basamak), donusten sonra 0.5 m (2) bos -> alt 7+4=11, sonra 2, kalan 1 alta
+    check(C.split_treads(17, 3, 7, 0, 0.25, 1.0, 0.5) == (12, 2),
+          C.split_treads(17, 3, 7, 0, 0.25, 1.0, 0.5))
+    check(C.split_treads(9, 3, 7, 0, 0.25, 9.0, 9.0) == (6, 0))       # fazla: duz kol kisalir
+    check(C.split_treads(17, 3, 7, 0, 0.25, None, None) == (14, 0))
+    # donus altta (ornek tarama Kat 2): ana kol donusten SONRA; once onun
+    # ucuna (1.0 m -> 4), sonra donusten once (0.5 m -> 2), kalan 1 ana kola
+    check(C.split_treads(17, 3, 0, 7, 0.25, 0.5, 1.0) == (2, 12),
+          C.split_treads(17, 3, 0, 7, 0.25, 0.5, 1.0))
+
+
 @test("stairs")
 def test_plan_run_reaches_level_with_type_limits(tmp):
     C = _stairs_calc()
@@ -1476,6 +1530,55 @@ def test_plan_run_reaches_level_with_type_limits(tmp):
     r = C.plan_run(3.0 * M2FT, 0.25 * M2FT, 0.0, 0.0)
     check(r["risers"] == 16 and approx(r["tread_ft"], 0.25 * M2FT, 1e-9), r)
     check(C.riser_ft(3.0 * M2FT, r["risers"]) <= 0.19 * M2FT + 1e-9)
+
+
+@test("stairs")
+def test_turn_detected_from_two_perpendicular_boxes(tmp):
+    # Ornek tarama Kat 2: 7 basamakli duz kol (+y) ve ustune bitisik, 90 derece
+    # donuk 3 basamakli kutu (kos -x) -> tek donen merdiven.
+    import stairs as S
+    a = {"start": (5.0, 1.0), "end": (5.0, 2.75), "width_m": 0.8, "depth_m": 0.25, "treads": 7,
+         "direction_status": "olculdu"}
+    b = {"start": (5.4, 3.25), "end": (4.6, 3.25), "width_m": 0.8, "depth_m": 0.27, "treads": 3,
+         "direction_status": "olculdu"}
+    far = {"start": (9.0, 9.0), "end": (9.0, 10.0), "width_m": 0.8, "depth_m": 0.25, "treads": 4}
+    out = S.join_turns([a, b, far])
+    turns = [x for x in out if x.get("turn")]
+    check(len(out) == 2 and len(turns) == 1, out)
+    t = turns[0]["turn"]
+    check(t["turn_at"] == "top", t)
+    check(approx(t["corner"][0], 5.0, 1e-6) and approx(t["corner"][1], 3.25, 1e-6), t)
+    check(approx(t["u2"][0], -1.0, 1e-6) and t["winders"] == 3, t)
+    levels = [{"floor": 2, "elevation_m": 0.0}, {"floor": 3, "elevation_m": 3.0}]
+    recs = S.records({2: out}, levels, [])
+    r = [x for x in recs if x.get("kind") == "turn"][0]
+    check(r["run1_treads"] == 7 and r["run2_treads"] == 0 and r["winders"] == 3, r)
+    check(approx(r["corner_ft"][0], 5.0 * M2FT, 1e-6) and approx(r["u2"][0], -1.0, 1e-6), r)
+
+
+@test("stairs")
+def test_turn_at_bottom_detected(tmp):
+    # Ornek taramanin gercek hali: 7 basamakli kol GUNEYE cikiyor, donus
+    # kutusu kolun BASLANGICINDA (kuzeyde), batiya. Yurume: bati -> donus -> guney.
+    import stairs as S
+    a = {"start": (5.0, 2.75), "end": (5.0, 1.0), "width_m": 0.8, "depth_m": 0.25, "treads": 7,
+         "direction_status": "olculdu"}
+    b = {"start": (5.4, 3.25), "end": (4.6, 3.25), "width_m": 0.8, "depth_m": 0.27, "treads": 3,
+         "direction_status": "olculdu"}
+    out = S.join_turns([a, b])
+    check(len(out) == 1 and out[0].get("turn"), out)
+    t = out[0]["turn"]
+    check(t["turn_at"] == "bottom" and t["run1_treads"] == 0 and t["run2_treads"] == 7, t)
+    check(approx(t["u1"][0], -1.0, 1e-6) and approx(t["u2"][1], -1.0, 1e-6), t)
+    check(approx(t["corner"][0], 5.0, 1e-6) and approx(t["corner"][1], 3.25, 1e-6), t)
+
+
+@test("stairs")
+def test_parallel_boxes_not_joined(tmp):
+    import stairs as S
+    a = {"start": (5.0, 1.0), "end": (5.0, 2.75), "width_m": 0.8, "depth_m": 0.25, "treads": 7}
+    b = {"start": (5.0, 3.0), "end": (5.0, 4.0), "width_m": 0.8, "depth_m": 0.25, "treads": 4}
+    check(not any(x.get("turn") for x in S.join_turns([a, b])))
 
 
 @test("stairs")

@@ -37,6 +37,9 @@ MIN_MEASURED_TREADS = 3
 MIN_RISE_M = 0.5                          # olculen toplam yukselme bundan azsa yon belirsiz
 MIN_INSIDE_FRAC = 0.75                    # seridin bu kadari kat izinde degilse bina disi
 FREE_RAY_M = 30.0
+TURN_PERP_SIN = math.sin(math.radians(20.0))   # iki kutu bu kadar dik ise donus
+TURN_GAP_M = 0.3                               # alt kolun ucu ile donus kutusu arasi
+MIN_WINDERS, MAX_WINDERS = 2, 4
 ID_PREFIX = "p-"
 
 
@@ -176,6 +179,77 @@ def orient(strip, points, floor_z, top_z):
     return s
 
 
+def _unit(a, b):
+    dx, dy = b[0] - a[0], b[1] - a[1]
+    n = math.hypot(dx, dy)
+    return (dx / n, dy / n) if n > 1e-9 else None
+
+
+def join_turns(strips):
+    """Polycam donen merdiveni duz kutulara boler: duz kol + ona bitisik, 90
+    derece donuk kucuk kutu (donus). Kutu kolun UST ucundaysa donus ustte
+    (kol -> donus), BASLANGICINDAysa altta (donus -> kol; ornek tarama Kat 2).
+    Ilk kutuya `turn` eklenir, donus kutusu listeden cikar:
+    {"turn_at", "corner" (donus karesinin merkezi), "u1" (donusten once
+    yuruyus), "u2" (sonra), "winders", "run1_treads", "run2_treads"}.
+    Donus yonu kutunun olculen cikis yonunden gelir."""
+    items = [dict(s) for s in strips]
+    used = set()
+    out = []
+    for i, a in enumerate(items):
+        if i in used:
+            continue
+        ua = _unit(a["start"], a["end"])
+        best = None
+        for j, b in enumerate(items):
+            if j == i or j in used or ua is None or b["treads"] > a["treads"]:
+                continue
+            ub = _unit(b["start"], b["end"])
+            if ub is None or abs(ua[0] * ub[0] + ua[1] * ub[1]) > TURN_PERP_SIN:
+                continue
+            bc = ((b["start"][0] + b["end"][0]) / 2.0, (b["start"][1] + b["end"][1]) / 2.0)
+            reach = max(a["width_m"], b["width_m"]) / 2.0 + TURN_GAP_M
+            for where, ref in (("top", a["end"]), ("bottom", a["start"])):
+                dx, dy = bc[0] - ref[0], bc[1] - ref[1]
+                along = dx * ua[0] + dy * ua[1]
+                lateral = abs(-dx * ua[1] + dy * ua[0])
+                ok = (0 < along <= reach) if where == "top" else (-reach <= along < 0)
+                if ok and lateral <= b["width_m"] and (best is None or abs(along) < best[0]):
+                    best = (abs(along), j, ub, where, ref, along)
+        if best is not None:
+            _, j, ub, where, ref, along = best
+            na = (-ua[1], ua[0])
+            sign = 1.0 if ub[0] * na[0] + ub[1] * na[1] >= 0 else -1.0
+            perp = (na[0] * sign, na[1] * sign)
+            corner = (ref[0] + ua[0] * along, ref[1] + ua[1] * along)
+            top = where == "top"
+            a["turn"] = {"turn_at": where, "corner": corner,
+                         "u1": ua if top else perp, "u2": perp if top else ua,
+                         "winders": max(MIN_WINDERS, min(MAX_WINDERS, int(items[j]["treads"]))),
+                         "run1_treads": int(a["treads"]) if top else 0,
+                         "run2_treads": 0 if top else int(a["treads"]),
+                         "turn_box_treads": int(items[j]["treads"]),
+                         "direction_status": items[j].get("direction_status", "varsayildi")}
+            used.add(j)
+        used.add(i)
+        out.append(a)
+    return out
+
+
+def _ray_free(footprint, p, d):
+    from shapely.geometry import LineString, Point
+    if footprint is None or footprint.is_empty or not footprint.covers(Point(p)):
+        return 0.0
+    seg = LineString([p, (p[0] + d[0] * FREE_RAY_M, p[1] + d[1] * FREE_RAY_M)])
+    part = seg.intersection(footprint)
+    parts = [part] if part.geom_type == "LineString" else list(getattr(part, "geoms", []))
+    best = 0.0
+    for g in parts:
+        if g.geom_type == "LineString" and g.distance(Point(p)) < 1e-6:
+            best = max(best, g.length)
+    return best
+
+
 def free_space(strip, footprint):
     """Kat izi (shapely, metre) icinde: ust uctan ileri ve alt uctan geri
     bos mesafe, seridin (genislikte dikdortgen) kat izinde kalan orani."""
@@ -242,7 +316,26 @@ def records(strips_by_floor, levels, warnings=None, footprints=None):
                             f, s["treads"], space["inside_frac"] * 100))
                 continue
             k += 1
-            out.append({
+            turn = s.get("turn")
+            extra = {"kind": "straight"}
+            if turn:
+                c, u1, u2 = turn["corner"], turn["u1"], turn["u2"]
+                hw = s["width_m"] / 2.0
+                l1 = turn["run1_treads"] * s["depth_m"]
+                l2 = turn["run2_treads"] * s["depth_m"]
+                run1_outer = (c[0] - u1[0] * (hw + l1), c[1] - u1[1] * (hw + l1))
+                run2_outer = (c[0] + u2[0] * (hw + l2), c[1] + u2[1] * (hw + l2))
+                free1 = _ray_free(fp, run1_outer, (-u1[0], -u1[1])) if fp is not None else None
+                free2 = _ray_free(fp, run2_outer, u2) if fp is not None else None
+                extra = {"kind": "turn", "turn_at": turn["turn_at"],
+                         "corner_ft": [c[0] * ft, c[1] * ft],
+                         "u1": [u1[0], u1[1]], "u2": [u2[0], u2[1]],
+                         "winders": turn["winders"], "run1_treads": turn["run1_treads"],
+                         "run2_treads": turn["run2_treads"],
+                         "turn_box_treads": turn["turn_box_treads"],
+                         "free1_ft": None if free1 is None else free1 * ft,
+                         "free2_ft": None if free2 is None else free2 * ft}
+            out.append(dict(extra, **{
                 "id": "{}stairs-{}-{}".format(ID_PREFIX, f, k - 1), "floor": f, "top_floor": top,
                 "height_m": round(storey, 3), "height_ft": storey * ft,
                 "start_ft": [s["start"][0] * ft, s["start"][1] * ft],
@@ -252,7 +345,7 @@ def records(strips_by_floor, levels, warnings=None, footprints=None):
                 "treads": int(s["treads"]),
                 "fwd_free_ft": None if space is None else space["fwd_free_m"] * ft,
                 "back_free_ft": None if space is None else space["back_free_m"] * ft,
-                "direction_status": s.get("direction_status", "varsayildi")})
+                "direction_status": s.get("direction_status", "varsayildi")}))
     return out
 
 
@@ -310,7 +403,7 @@ def find_stairs(doc, dxf_path, points=None):
             top_z = (elev[top] - offset) if top in elev else floor_z + 3.5
             strips.append(orient(s, points, floor_z, top_z))
         if strips:
-            by_floor[f] = strips
+            by_floor[f] = join_turns(strips)
     from shapely import affinity
     footprints = {}
     for f in by_floor:
