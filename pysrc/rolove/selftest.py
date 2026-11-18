@@ -796,6 +796,193 @@ def test_ledger_roundtrip_and_corrupt(tmp):
 
 
 # --------------------------------------------------------------------------
+# Prototip (toparlama)
+# --------------------------------------------------------------------------
+
+M2FT = 1.0 / 0.3048
+
+
+def _pw(floor, a, b, side="exterior", status="olculdu", wid=None, height_m=2.45):
+    """Metre cinsinden uclarla prototip test duvari (JSON bicimi, feet)."""
+    _pw.n = getattr(_pw, "n", 0) + 1
+    return {"id": wid or "w{}".format(_pw.n), "floor": floor, "side": side,
+            "location": "interior_face" if side == "exterior" else "center",
+            "start_ft": [a[0] * M2FT, a[1] * M2FT], "end_ft": [b[0] * M2FT, b[1] * M2FT],
+            "outward": None, "status": status, "deviation_cm": 0.0,
+            "height_m": height_m, "height_ft": height_m * M2FT, "warnings": []}
+
+
+def _rot(p, deg, about=(0.0, 0.0)):
+    a = math.radians(deg)
+    x, y = p[0] - about[0], p[1] - about[1]
+    return (about[0] + x * math.cos(a) - y * math.sin(a),
+            about[1] + x * math.sin(a) + y * math.cos(a))
+
+
+def _wall_deg(w):
+    (x1, y1), (x2, y2) = w["start_ft"], w["end_ft"]
+    return math.degrees(math.atan2(y2 - y1, x2 - x1))
+
+
+def _mid(w):
+    (x1, y1), (x2, y2) = w["start_ft"], w["end_ft"]
+    return ((x1 + x2) / 2.0, (y1 + y2) / 2.0)
+
+
+def _rect_walls(floor, x0, y0, x1, y1, **kw):
+    return [_pw(floor, (x0, y0), (x1, y0), **kw), _pw(floor, (x1, y0), (x1, y1), **kw),
+            _pw(floor, (x1, y1), (x0, y1), **kw), _pw(floor, (x0, y1), (x0, y0), **kw)]
+
+
+def _proto_doc(walls, floors_elev, openings=(), rooms=(), main_floor=2):
+    return {"z_datum": {"floor": main_floor, "offset_m": 0.0},
+            "levels": [{"id": "lv{}".format(f), "floor": f, "name": "Kat {} (Scan)".format(f),
+                        "elevation_m": e, "elevation_ft": e * M2FT}
+                       for f, e in floors_elev.items()],
+            "walls": list(walls), "openings": list(openings), "rooms": list(rooms),
+            "rejected": [], "warnings": [], "previews": [], "params": {}}
+
+
+@test("proto")
+def test_dominant_angle_ignores_minority_skew(tmp):
+    import prototype as P
+    ws = [_pw(2, (0, 0), (10, 0)), _pw(2, (0, 0), (0, 8)),
+          _pw(2, (0, 0), _rot((6, 0), 3.0))]
+    check(approx(math.degrees(P.dominant_angle(ws, 2)), 0.0, 0.05),
+          math.degrees(P.dominant_angle(ws, 2)))
+    tilted = [_pw(2, _rot((0, 0), 20), _rot((10, 0), 20)), _pw(2, (0, 0), _rot((0, 8), 20))]
+    check(approx(math.degrees(P.dominant_angle(tilted, 2)), 20.0, 0.05))
+
+
+@test("proto")
+def test_dominant_angle_wraps_mod90(tmp):
+    import prototype as P
+    ws = [_pw(2, (0, 0), _rot((10, 0), 89.8)), _pw(2, (0, 0), _rot((10, 0), 0.2))]
+    deg = math.degrees(P.dominant_angle(ws, 2))
+    check(min(abs(deg), abs(deg - 90.0)) < 0.25, deg)
+
+
+@test("proto")
+def test_orthogonalize_small_angle(tmp):
+    import prototype as P
+    w = _pw(2, (0, 0), _rot((10, 0), 4.0))
+    mid = _mid(w)
+    n = P.orthogonalize([w], 0.0)
+    check(n == 1 and approx(_wall_deg(w), 0.0, 1e-6), (n, _wall_deg(w)))
+    check(approx(_mid(w)[0], mid[0], 1e-9) and approx(_mid(w)[1], mid[1], 1e-9))
+    v = _pw(2, (0, 0), _rot((0, 8), -3.0))
+    check(P.orthogonalize([v], 0.0) == 1 and approx(abs(_wall_deg(v)), 90.0, 1e-6))
+
+
+@test("proto")
+def test_orthogonalize_skips_large_angle(tmp):
+    import prototype as P
+    ws = [_pw(2, (0, 0), _rot((10, 0), 8.0)), _pw(2, (0, 0), _rot((4, 0), 30.0))]
+    before = [list(w["end_ft"]) for w in ws]
+    check(P.orthogonalize(ws, 0.0) == 0)
+    check([w["end_ft"] for w in ws] == before)
+
+
+@test("proto")
+def test_stack_exterior_snaps_close_parallel(tmp):
+    import prototype as P
+    k2 = _pw(2, (0, 0), (10, 0))
+    k3 = _pw(3, (2, 0.10), (8, 0.10))
+    n = P.stack_exterior([k2, k3], 2)
+    check(n == 1, n)
+    check(approx(k3["start_ft"][1], 0.0, 1e-6) and approx(k3["end_ft"][1], 0.0, 1e-6), k3)
+    check(approx(k3["start_ft"][0], 2 * M2FT, 1e-6), k3)          # uzunluk/konum korunur
+    check(k2["start_ft"] == [0.0, 0.0] and k2["end_ft"] == [10 * M2FT, 0.0], k2)
+
+
+@test("proto")
+def test_stack_exterior_keeps_far_and_interior(tmp):
+    import prototype as P
+    k2 = _pw(2, (0, 0), (10, 0))
+    far = _pw(3, (2, 0.30), (8, 0.30))
+    inner = _pw(3, (2, 0.05), (8, 0.05), side="interior")
+    beside = _pw(3, (12, 0.05), (15, 0.05))                       # planda ortusmuyor
+    check(P.stack_exterior([k2, far, inner, beside], 2) == 0)
+    check(approx(far["start_ft"][1], 0.30 * M2FT, 1e-9) and
+          approx(inner["start_ft"][1], 0.05 * M2FT, 1e-9) and
+          approx(beside["start_ft"][1], 0.05 * M2FT, 1e-9))
+
+
+@test("proto")
+def test_tidy_labels_moved_walls(tmp):
+    import prototype as P
+    ws = _rect_walls(2, 0, 0, 10, 8)
+    ws[0] = _pw(2, _rot((0, 0), 4.0, (5, 0)), _rot((10, 0), 4.0, (5, 0)), wid="skew")
+    ws[2]["status"] = "varsayildi"
+    doc = P.tidy(_proto_doc(ws, {2: 0.0}))
+    by = {w["id"]: w for w in doc["walls"]}
+    skew = by["p-skew"]
+    check(skew["status"] == "duzeltildi" and skew["deviation_cm"] > 5.0, skew)
+    check(any("diklestirildi" in x for x in skew["warnings"]), skew["warnings"])
+    check(by[doc["walls"][2]["id"]]["status"] == "varsayildi")
+    still = [w for w in doc["walls"] if w["id"] != "p-skew" and w["status"] == "olculdu"]
+    check(len(still) == 2, [(w["id"], w["status"], w["deviation_cm"]) for w in doc["walls"]])
+    check(doc["prototype"]["orthogonalized"] == 1, doc["prototype"])
+
+
+@test("proto")
+def test_openings_follow_and_clamp(tmp):
+    import prototype as P
+    w = _pw(2, _rot((0, 0), 3.0, (2, 0)), _rot((4, 0), 3.0, (2, 0)), wid="h")
+    ops = [{"id": "o1", "floor": 2, "kind": "window", "host_id": "h",
+            "offset_ft": 2.0 * M2FT, "width_ft": 1.0 * M2FT},
+           {"id": "o2", "floor": 2, "kind": "door", "host_id": "h",
+            "offset_ft": 3.8 * M2FT, "width_ft": 1.0 * M2FT}]
+    doc = P.tidy(_proto_doc([w], {2: 0.0}, openings=ops))
+    o = {x["id"]: x for x in doc["openings"]}
+    check(o["p-o1"]["host_id"] == "p-h", o["p-o1"])
+    check(approx(o["p-o1"]["offset_ft"], 2.0 * M2FT, 1e-6), o["p-o1"])
+    check(approx(o["p-o2"]["offset_ft"], 3.5 * M2FT, 1e-6), o["p-o2"])
+
+
+@test("proto")
+def test_top_floor_single_floor(tmp):
+    import prototype as P
+    check(P.top_floors([{"floor": 1, "elevation_m": 0.0}]) == {1: None})
+
+
+@test("proto")
+def test_top_floor_uses_levels_not_walls(tmp):
+    import prototype as P
+    levels = [{"floor": f, "elevation_m": e} for f, e in
+              ((3, 3.0), (1, -2.04), (4, 5.54), (2, 0.0))]
+    check(P.top_floors(levels) == {1: 2, 2: 3, 3: 4, 4: None}, P.top_floors(levels))
+    doc = P.tidy(_proto_doc(_rect_walls(2, 0, 0, 10, 8) + _rect_walls(4, 0, 0, 5, 8),
+                            {1: -2.04, 2: 0.0, 3: 3.0, 4: 5.54}))
+    check(all(w["top_floor"] == 3 for w in doc["walls"] if w["floor"] == 2))
+    check(all(w["top_floor"] is None for w in doc["walls"] if w["floor"] == 4))
+
+
+@test("proto")
+def test_tidy_prefixes_ids_and_names(tmp):
+    import prototype as P
+    ws = _rect_walls(1, 0, 0, 4, 4) + _rect_walls(2, 0, 0, 10, 8)
+    ops = [{"id": "o1", "floor": 2, "kind": "door", "host_id": ws[4]["id"],
+            "offset_ft": 5.0 * M2FT, "width_ft": 0.9 * M2FT}]
+    rooms = [{"id": "r1", "floor": 2, "name": "Salon",
+              "polygon_ft": [[0, 0], [10 * M2FT, 0], [10 * M2FT, 8 * M2FT], [0, 8 * M2FT]],
+              "label_point_ft": [5 * M2FT, 4 * M2FT]}]
+    doc = P.tidy(_proto_doc(ws, {1: -2.04, 2: 0.0}, openings=ops, rooms=rooms))
+    ids = [x["id"] for k in ("levels", "walls", "openings", "rooms") for x in doc[k]]
+    check(all(i.startswith("p-") for i in ids), ids)
+    wall_ids = {w["id"] for w in doc["walls"]}
+    check(doc["openings"][0]["host_id"] in wall_ids)
+    check({lv["name"] for lv in doc["levels"]} == {"Kat 1 (Prototip)", "Kat 2 (Prototip)"})
+    low = [w for w in doc["walls"] if w["floor"] == 1]
+    check(all(w["top_floor"] == 2 and "scan_start_ft" in w for w in low), low[0])
+    check(all(any("yukseklik: taranan 2.45 m" in x for x in w["warnings"]) for w in low),
+          low[0]["warnings"])
+    check(all(not any("yukseklik" in x for x in w["warnings"])
+              for w in doc["walls"] if w["floor"] == 2))
+    check(doc["prototype"]["params"]["angle_max_deg"] == 5.0, doc["prototype"])
+
+
+# --------------------------------------------------------------------------
 
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser()
