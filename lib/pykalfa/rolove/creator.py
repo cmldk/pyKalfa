@@ -573,10 +573,12 @@ def _cut_state(ctx, inst, host, vol_before):
 
 def _ensure_cut(ctx, o, inst, host, vol_before):
     """Kapi/pencere duvari gercekten kesti mi (duvar hacmi azaldi mi)?
-    API ile yerlestirilen bazi ailelerde kesme bagi kurulmuyor: eleman dogru
-    duvara bagli, duvarin icinde, ayni fazda ama delik yok; ok tusuyla
-    oynatmak duzeltmiyor, "Pick New Host" duzeltiyor. Kesmediyse ailenin
-    void'i duvara `InstanceVoidCutUtils.AddInstanceVoidCut` ile baglanir.
+    Eskiden kapi/pencereler arka arkaya, aralarda `Regenerate` olmadan
+    olusturuluyordu: eleman dogru duvara bagli, duvarin icinde, ayni fazda
+    ama delik yoktu ("Pick New Host" duzeltiyordu). Her elemandan once ve
+    sonra `Regenerate` (`_create_opening` + burada) eklenince ornek taramada
+    24/24 kesti ve bu yedek yol hic gerekmedi. Yedek: yine de kesmediyse
+    ailenin void'i `InstanceVoidCutUtils.AddInstanceVoidCut` ile baglanir.
     Sonuc `ctx.cut_stats`'a sayilir, kalan sorunlar rapora yazilir."""
     stats = ctx.cut_stats
     try:
