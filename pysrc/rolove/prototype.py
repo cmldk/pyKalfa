@@ -203,7 +203,100 @@ class _Seg(object):
         self.line = _line(w)
 
 
+REJOIN_MAX_M = 0.5          # kaydedilmis birlesim bu kadardan uzaga tasinmaz
+FOLLOW_TOL_M = 0.01         # ucuncu uc yalniz taramada GERCEKTEN ayni noktadaysa
+
+
+def _end(w, k):
+    return tuple(w["start_ft"] if k == 0 else w["end_ft"])
+
+
+def _set_end(w, k, p):
+    w["start_ft" if k == 0 else "end_ft"] = [float(p[0]), float(p[1])]
+
+
+def record_joints(walls, snap_ft):
+    """Toparlamadan ONCE (tarama geometrisi) kat icindeki birlesimler:
+    ("corner", i, k, j, m) uc-uca (`snap_ft` icinde, en yakindan baslayarak,
+    her uc bir kez); ("follow", i, k, j, m) ayni koseye gelen ucuncu (ve
+    sonraki) uc -> o kosenin noktasina tasinir; ("t", i, k, j) bos ucun
+    baska duvarin govdesine degmesi. Indeksler `walls` listesine."""
+    pairs = []
+    for i in range(len(walls)):
+        for j in range(i + 1, len(walls)):
+            for k in (0, 1):
+                for m in (0, 1):
+                    d = math.dist(_end(walls[i], k), _end(walls[j], m))
+                    if d <= snap_ft:
+                        pairs.append((d, i, k, j, m))
+    pairs.sort()
+    used, joints = set(), []
+    for _, i, k, j, m in pairs:
+        if (i, k) in used or (j, m) in used:
+            continue
+        used.update({(i, k), (j, m)})
+        joints.append(("corner", i, k, j, m))
+    corner_ends = sorted(used)
+    for i in range(len(walls)):
+        for k in (0, 1):
+            if (i, k) in used:
+                continue
+            near = [(math.dist(_end(walls[i], k), _end(walls[j], m)), j, m)
+                    for j, m in corner_ends if j != i]
+            near = [x for x in near if x[0] <= FOLLOW_TOL_M * config.FT]
+            if near:
+                _, j, m = min(near)
+                used.add((i, k))
+                joints.append(("follow", i, k, j, m))
+    for i, w in enumerate(walls):
+        for k in (0, 1):
+            if (i, k) in used:
+                continue
+            best = None
+            for j, other in enumerate(walls):
+                if j == i or _length(other) <= 1e-9:
+                    continue
+                t, d = geom2d.project(_line(other), _end(w, k))
+                if abs(d) <= snap_ft and 0.0 < t < _length(other):
+                    if best is None or abs(d) < best[0]:
+                        best = (abs(d), j)
+            if best is not None:
+                used.add((i, k))
+                joints.append(("t", i, k, best[1]))
+    return joints
+
+
+def restore_joints(walls, joints, max_ft):
+    """Toparlamadan SONRA: kaydedilen birlesimleri sonsuz dogrularin
+    kesisimiyle yeniden kurar (paralel ya da `max_ft`'den uzak kesisimde
+    kose = iki ucun ortasi; T = dokunulmaz). Kurulan uc sayisi."""
+    import refine
+    n = 0
+    for joint in joints:
+        if joint[0] == "corner":
+            _, i, k, j, m = joint
+            a, b = _end(walls[i], k), _end(walls[j], m)
+            p = refine._intersect(_line(walls[i]), _line(walls[j]))
+            if p is None or math.dist(p, a) > max_ft or math.dist(p, b) > max_ft:
+                p = ((a[0] + b[0]) / 2.0, (a[1] + b[1]) / 2.0)
+            _set_end(walls[i], k, p)
+            _set_end(walls[j], m, p)
+            n += 2
+        elif joint[0] == "follow":
+            _, i, k, j, m = joint
+            _set_end(walls[i], k, _end(walls[j], m))
+            n += 1
+        else:
+            _, i, k, j = joint
+            p = refine._intersect(_line(walls[i]), _line(walls[j]))
+            if p is not None and math.dist(p, _end(walls[i], k)) <= max_ft:
+                _set_end(walls[i], k, p)
+                n += 1
+    return n
+
+
 def _join_floor(walls):
+    """Taramada acik kalmis uclar icin mesafe tabanli kose birlestirme."""
     import refine
     segs = [_Seg(w) for w in walls if _length(w) > 1e-9]
     refine.join_corners(segs, config.CORNER_SNAP_M * config.FT)
@@ -252,12 +345,18 @@ def tidy(doc: dict) -> dict:
         if host is not None and _length(host) > 1e-9:
             centers[o["id"]] = _point_at(_line(host), o["offset_ft"])
 
+    floors = sorted({w["floor"] for w in walls})
+    snap_ft = config.CORNER_SNAP_M * config.FT
+    per_floor = {f: [w for w in walls if w["floor"] == f and _length(w) > 1e-9] for f in floors}
+    joints = {f: record_joints(per_floor[f], snap_ft) for f in floors}
+
     moved = {}
     theta = dominant_angle(walls, main_floor) if walls else 0.0
     n_orth = orthogonalize(walls, theta, moved=moved)
     n_stack = stack_exterior(walls, main_floor, moved=moved)
-    for f in sorted({w["floor"] for w in walls}):
-        _join_floor([w for w in walls if w["floor"] == f])
+    for f in floors:
+        restore_joints(per_floor[f], joints[f], REJOIN_MAX_M * config.FT)
+        _join_floor(per_floor[f])
 
     skipped = []
     limit = math.radians(ANGLE_MAX_DEG)
@@ -285,6 +384,8 @@ def tidy(doc: dict) -> dict:
         o["offset_ft"] = t
 
     tops = top_floors(doc.get("levels") or [])
+    for r in doc.get("rooms") or []:
+        r["top_floor"] = tops.get(r["floor"])
     for w in walls:
         w["top_floor"] = tops.get(w["floor"])
         if w["top_floor"] is not None:

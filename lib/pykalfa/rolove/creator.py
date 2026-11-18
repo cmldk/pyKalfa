@@ -548,6 +548,21 @@ def _stage_openings(ctx):
         ctx.report.add("created", o["kind"], sid)
 
 
+def _room_upper_limit(ctx, r, room):
+    """Prototip: oda ust siniri = ust katin Level'i, doseme kalinligi kadar
+    asagida (duvarlarla ayni). Rolove Aktar'da (doseme tipi yok) dokunulmaz."""
+    top = r.get("top_floor")
+    level = ctx.levels.get(top) if top is not None else None
+    if level is None or ctx.choices.floor_type is None:
+        return
+    try:
+        room.get_Parameter(BuiltInParameter.ROOM_UPPER_LEVEL).Set(level.Id)
+        room.get_Parameter(BuiltInParameter.ROOM_UPPER_OFFSET).Set(
+            -ctx.choices.floor_thickness_ft)
+    except Exception as ex:  # noqa: BLE001 - oda yine de var
+        ctx.report.warnings.append("Oda {}: ust sinir ayarlanamadi ({})".format(r["id"], ex))
+
+
 def _stage_rooms(ctx):
     rooms = ctx.data.get("rooms", [])
     plan = ctx.plan([r["id"] for r in rooms])
@@ -574,6 +589,7 @@ def _stage_rooms(ctx):
             name = room.get_Parameter(BuiltInParameter.ROOM_NAME)
             if name is not None:
                 name.Set(r["name"])
+            _room_upper_limit(ctx, r, room)
         except Exception as ex:  # noqa: BLE001
             ctx.report.add("failed", "room", sid, str(ex))
             continue

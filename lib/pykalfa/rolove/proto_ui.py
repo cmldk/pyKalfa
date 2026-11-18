@@ -26,7 +26,14 @@ def rolove_conflicts(doc):
                 if creator._alive(doc, items.get(k))])
 
 
-def summary_text(data, plan, conflict_count):
+def existing_slabs(doc):
+    """Bu projede daha once olusturulmus prototip dosemeleri: duran / silinmis."""
+    items = storage.get_ledger(doc)["items"]
+    alive = set(uid for uid in items.values() if creator._alive(doc, uid))
+    return ledger.count_prefixed(items, PREFIX + "floor-", alive)
+
+
+def summary_text(data, plan, conflict_count, slabs=None):
     proto = data.get("prototype") or {}
     lines = []
     if conflict_count:
@@ -47,14 +54,19 @@ def summary_text(data, plan, conflict_count):
                  "katin duvarlari taranan yukseklikte kalir.")
     lines.append("  Doseme = katin izi + alttaki katin izi (ustu acik kalan kisim duz cati "
                  "varsayilir). Cati, merdiven ve merdiven boslugu yok.")
+    lines.append("  Dosemeler dis duvar tipi secildikten sonra hesaplanir (asagidaki "
+                 "sayilara dahil degil).")
+    if slabs and (slabs.get("alive") or slabs.get("deleted")):
+        lines.append("  Bu projede onceki prototip dosemeleri: {} duruyor (korunur), {} silinmis "
+                     "(geri gelmez).".format(slabs.get("alive", 0), slabs.get("deleted", 0)))
     lines.append("")
     lines.append(rolove_ui._summary_text(data, plan))
     return "\n".join(lines)
 
 
-def summary_and_confirm(data, plan, conflict_count):
+def summary_and_confirm(data, plan, conflict_count, slabs=None):
     """"create" | "edit"; iptal scripti sonlandirir."""
-    choice = forms.alert(summary_text(data, plan, conflict_count),
+    choice = forms.alert(summary_text(data, plan, conflict_count, slabs),
                          title="{} - onizleme".format(TITLE),
                          options=[rolove_ui.CREATE, rolove_ui.EDIT, rolove_ui.CANCEL])
     if choice == rolove_ui.CREATE:

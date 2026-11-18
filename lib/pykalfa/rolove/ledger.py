@@ -64,3 +64,11 @@ def foreign_items(items, prefix):
     """`prefix` ile BASLAMAYAN kararli id'ler, sirali (ör. Rolove Prototip
     icin: ayni projedeki Rolove Aktar elemanlari)."""
     return sorted(k for k in items if not k.startswith(prefix))
+
+
+def count_prefixed(items, prefix, existing_unique_ids):
+    """`prefix` ile baslayan defter ogeleri: modelde duran / kullanicinin sildigi."""
+    existing = set(existing_unique_ids)
+    keys = [k for k in items if k.startswith(prefix)]
+    alive = len([k for k in keys if items[k] in existing])
+    return {"alive": alive, "deleted": len(keys) - alive}

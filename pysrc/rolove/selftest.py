@@ -749,6 +749,14 @@ def test_foreign_items(tmp):
     check(ledger.foreign_items({}, "p-") == [])
 
 
+@test("ledger")
+def test_count_prefixed(tmp):
+    ledger = _ledger()
+    items = {"p-floor-2-0": "u1", "p-floor-3-0": "u2", "p-w1": "u3", "abc": "u4"}
+    check(ledger.count_prefixed(items, "p-floor-", {"u1", "u3", "u4"}) ==
+          {"alive": 1, "deleted": 1}, ledger.count_prefixed(items, "p-floor-", {"u1"}))
+
+
 def _inputs():
     _ledger()                                   # lib/pykalfa/rolove sys.path'e
     import inputs
@@ -931,6 +939,97 @@ def test_tidy_labels_moved_walls(tmp):
     still = [w for w in doc["walls"] if w["id"] != "p-skew" and w["status"] == "olculdu"]
     check(len(still) == 2, [(w["id"], w["status"], w["deviation_cm"]) for w in doc["walls"]])
     check(doc["prototype"]["orthogonalized"] == 1, doc["prototype"])
+
+
+def _open_scan_joints(doc):
+    """Taramada (scan_*) birlesik olup toparlamadan sonra acilan uc ciftleri (cm)."""
+    out = []
+    walls = doc["walls"]
+    for i, a in enumerate(walls):
+        for b in walls[i + 1:]:
+            if a["floor"] != b["floor"]:
+                continue
+            for ka, kb in (("start", "start"), ("start", "end"), ("end", "start"), ("end", "end")):
+                if math.dist(a["scan_" + ka + "_ft"], b["scan_" + kb + "_ft"]) < 0.001 * M2FT:
+                    gap = math.dist(a[ka + "_ft"], b[kb + "_ft"]) * 30.48
+                    if gap > 0.2:
+                        out.append((a["id"], b["id"], round(gap, 1)))
+    return out
+
+
+@test("proto")
+def test_tidy_keeps_scan_corners_closed_long_wall(tmp):
+    # 10 m duvar 2 derece egik: orta noktasi etrafinda donunce uclari ~17 cm
+    # yana kayar (> kose yakalama 15 cm). Taramada kapali kose acik kalmamali.
+    import prototype as P
+    c = (10.0, 10.0 * math.tan(math.radians(2.0)))
+    walls = [_pw(2, (0, 0), c), _pw(2, c, (10, 8)), _pw(2, (10, 8), (0, 8)),
+             _pw(2, (0, 8), (0, 0))]
+    doc = P.tidy(_proto_doc(walls, {2: 0.0}))
+    check(doc["prototype"]["orthogonalized"] == 1, doc["prototype"])
+    check(_open_scan_joints(doc) == [], _open_scan_joints(doc))
+    check(approx(_wall_deg(doc["walls"][0]), 0.0, 1e-6), _wall_deg(doc["walls"][0]))
+
+
+@test("proto")
+def test_tidy_keeps_scan_corners_closed_stack_and_rotation(tmp):
+    import prototype as P
+    lower = _rect_walls(2, 0, 0, 10, 8)
+    x = 0.14                                     # Kat 3 sol duvari 14 cm iceride
+    c = (10.0, 10.0 * math.tan(math.radians(1.5)) + 0.0)
+    upper = [_pw(3, (x, 0), c), _pw(3, c, (10, 8)), _pw(3, (10, 8), (x, 8)),
+             _pw(3, (x, 8), (x, 0))]
+    doc = P.tidy(_proto_doc(lower + upper, {2: 0.0, 3: 3.0}))
+    check(doc["prototype"]["stacked"] >= 1, doc["prototype"])
+    check(_open_scan_joints(doc) == [], _open_scan_joints(doc))
+
+
+@test("proto")
+def test_tidy_keeps_triple_junction_closed(tmp):
+    # Ornek taramanin Kat 3'u: uc duvar ucu ayni noktada (kose + ic duvar).
+    import prototype as P
+    c = (10.0, 10.0 * math.tan(math.radians(2.0)))
+    walls = [_pw(2, (0, 0), c), _pw(2, c, (10, 8)), _pw(2, (10, 8), (0, 8)),
+             _pw(2, (0, 8), (0, 0)),
+             _pw(2, c, (5, c[1] + 4), side="interior")]           # koseden cikan ic duvar
+    doc = P.tidy(_proto_doc(walls, {2: 0.0}))
+    check(_open_scan_joints(doc) == [], _open_scan_joints(doc))
+
+
+@test("proto")
+def test_tidy_does_not_pull_open_end_to_corner(tmp):
+    # Taramada koseden 10 cm acik duran kisa duvar ucu koseye CEKILMEMELI
+    # (cekilirse 0.2 m duvar ~15 derece doner).
+    import prototype as P
+    walls = _rect_walls(2, 0, 0, 10, 8)
+    short = _pw(2, (-0.07, -0.07), (-0.07, -0.27), wid="short")
+    doc = P.tidy(_proto_doc(walls + [short], {2: 0.0}))
+    s = [w for w in doc["walls"] if w["id"] == "p-short"][0]
+    check(approx(abs(_wall_deg(s)), 90.0, 0.01), _wall_deg(s))
+
+
+@test("proto")
+def test_tidy_keeps_t_junction_on_wall(tmp):
+    # Ic duvar ucu dis duvarin govdesine degiyor (T); dis duvar donunce ic
+    # duvar ucu yeni hatta uzamali / kisalmali.
+    import prototype as P
+    c = (10.0, 10.0 * math.tan(math.radians(2.0)))
+    walls = [_pw(2, (0, 0), c), _pw(2, c, (10, 8)), _pw(2, (10, 8), (0, 8)),
+             _pw(2, (0, 8), (0, 0))]
+    y0 = 1.0 * math.tan(math.radians(2.0))
+    inner = _pw(2, (1.0, y0), (1.0, 8), side="interior")
+    doc = P.tidy(_proto_doc(walls + [inner], {2: 0.0}))
+    bottom, t = doc["walls"][0], doc["walls"][4]
+    check(approx(t["start_ft"][1], bottom["start_ft"][1], 1e-6), (t["start_ft"], bottom))
+
+
+@test("proto")
+def test_tidy_rooms_get_top_floor(tmp):
+    import prototype as P
+    doc = P.tidy(_proto_doc(_rect_walls(2, 0, 0, 10, 8), {2: 0.0, 3: 3.0},
+                            rooms=[_room(2, 0, 0, 10, 8), _room(3, 0, 0, 10, 8)]))
+    tops = {r["floor"]: r["top_floor"] for r in doc["rooms"]}
+    check(tops == {2: 3, 3: None}, tops)
 
 
 @test("proto")

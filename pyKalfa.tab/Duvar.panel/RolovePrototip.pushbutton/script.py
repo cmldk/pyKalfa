@@ -122,7 +122,8 @@ if not data.get("walls"):
 level_overrides = {}
 plan = creator.preview_plan(doc, data)
 conflicts = proto_ui.rolove_conflicts(doc)
-while proto_ui.summary_and_confirm(data, plan, conflicts) == "edit":
+slabs = proto_ui.existing_slabs(doc)
+while proto_ui.summary_and_confirm(data, plan, conflicts, slabs) == "edit":
     level_overrides.update(ui.edit_levels(data))
 
 try:
