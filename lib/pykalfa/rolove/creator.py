@@ -47,7 +47,7 @@ from pyrevit import script
 
 from pykalfa.revitutils import WarningSwallower, WarningSwallowerUnjoin, elem_name
 from pykalfa.rolove import ledger as ledger_mod
-from pykalfa.rolove import params, storage
+from pykalfa.rolove import inserts, params, storage
 
 logger = script.get_logger()
 
@@ -485,11 +485,11 @@ def _worst(status):
     return "olculdu"
 
 
-def _point_on(w, offset_ft, z):
-    (x1, y1), (x2, y2) = w["start_ft"], w["end_ft"]
-    length = math.hypot(x2 - x1, y2 - y1)
-    ux, uy = (x2 - x1) / length, (y2 - y1) / length
-    return XYZ(x1 + ux * offset_ft, y1 + uy * offset_ft, z), (ux, uy)
+def _axis_point(w, host, offset_ft, z):
+    """Duvar ekseni uzerinde nokta (dis duvarda JSON hatti ic yuzdur;
+    bkz. `inserts.insert_point_ft`)."""
+    x, y = inserts.insert_point_ft(w, offset_ft, host.Width)
+    return XYZ(x, y, z)
 
 
 def _create_opening(ctx, o, host, level):
@@ -508,7 +508,7 @@ def _create_opening(ctx, o, host, level):
                 "{}: '{}' ailesinde genislik/yukseklik parametresi yok; Opening kullanildi".format(
                     o["id"], elem_name(base_symbol)))
     if symbol is not None:
-        pt, _ = _point_on(w, o["offset_ft"], base)
+        pt = _axis_point(w, host, o["offset_ft"], base)
         inst = ctx.doc.Create.NewFamilyInstance(pt, symbol, host, level,
                                                 StructuralType.NonStructural)
         if o["kind"] == "window":
@@ -518,8 +518,8 @@ def _create_opening(ctx, o, host, level):
         params.set_values(inst, ctx.param_names, _worst(o["status"]), None, None)
         return inst
     half = o["width_ft"] / 2.0
-    p1, _ = _point_on(w, o["offset_ft"] - half, base + o["sill_ft"])
-    p2, _ = _point_on(w, o["offset_ft"] + half, base + o["sill_ft"] + o["height_ft"])
+    p1 = _axis_point(w, host, o["offset_ft"] - half, base + o["sill_ft"])
+    p2 = _axis_point(w, host, o["offset_ft"] + half, base + o["sill_ft"] + o["height_ft"])
     return ctx.doc.Create.NewOpening(host, p1, p2)
 
 

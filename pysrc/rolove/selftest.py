@@ -750,6 +750,22 @@ def test_foreign_items(tmp):
 
 
 @test("ledger")
+def test_insert_point_on_wall_axis(tmp):
+    # Dis duvarin JSON hatti IC YUZ: kapi/pencere noktasi yuzeyde kalirsa
+    # Revit host'a oturtamiyor (duvar kesilmiyor). Nokta eksene alinmali.
+    _ledger()
+    import inserts
+    ext = {"location": "interior_face", "start_ft": [0.0, 0.0], "end_ft": [10.0, 0.0],
+           "outward": [0.0, -1.0]}
+    x, y = inserts.insert_point_ft(ext, 4.0, 1.0)
+    check(approx(x, 4.0, 1e-9) and approx(y, -0.5, 1e-9), (x, y))
+    inner = {"location": "center", "start_ft": [0.0, 0.0], "end_ft": [0.0, 10.0],
+             "outward": None}
+    x, y = inserts.insert_point_ft(inner, 3.0, 0.5)
+    check(approx(x, 0.0, 1e-9) and approx(y, 3.0, 1e-9), (x, y))
+
+
+@test("ledger")
 def test_count_prefixed(tmp):
     ledger = _ledger()
     items = {"p-floor-2-0": "u1", "p-floor-3-0": "u2", "p-w1": "u3", "abc": "u4"}
