@@ -11,7 +11,7 @@ de bâtiment avec dalles à partir d'un scan Polycam.
 | Bouton | Rôle |
 | --- | --- |
 | **Parsel/Bina Aktar** | Convertit des images cadastrales (PNG) en géométrie Revit : limites de parcelles en `DetailLine`, bâtiments en `FilledRegion`, numéros de parcelles en `TextNote`. |
-| **Parsel/Bina GIS** | En Wallonie, récupère les limites de parcelles, les bâtiments et les numéros de parcelles depuis le géoportail du SPW à partir d'une adresse ou d'un CaPaKey, et les dessine avec les mêmes styles que Parsel/Bina Aktar. Ni images ni OCR. |
+| **Parsel/Bina GIS** | En Wallonie et en Flandre, récupère les limites de parcelles, les bâtiments et les numéros de parcelles depuis les services SIG régionaux à partir d'une adresse ou d'un CaPaKey, et les dessine avec les mêmes styles que Parsel/Bina Aktar. Ni images ni OCR. |
 | **Rölöve Prototip** | Prototype rapide, nettoyé et avec dalles, depuis le même scan Polycam : angles droits, murs extérieurs alignés d'un étage à l'autre, une dalle par niveau. |
 
 ## Prérequis
@@ -99,15 +99,27 @@ peut pas être vérifié, un avertissement s'affiche.
 
 ### Parsel/Bina GIS — parcelles et bâtiments depuis le géoportail
 
-**Wallonie uniquement**, connexion internet requise. Pas d'images, pas
-d'échelle, pas d'OCR : les limites de parcelles viennent du SPW
-`CADMAP_PARCELLES`, les bâtiments du PICC du SPW et les numéros des
-attributs cadastraux de la parcelle.
+Pour la **Wallonie** et la **Flandre** ; connexion internet requise. Pas
+d'images, pas d'échelle, pas d'OCR. Les adresses candidates des deux
+régions arrivent dans une même liste (chaque ligne indique sa région) ; un
+CaPaKey est cherché d'abord en Wallonie, puis en Flandre. Bruxelles n'est
+pas pris en charge.
+
+| | Wallonie | Flandre |
+|---|---|---|
+| Adresse | ICAR (SPW) | Digitaal Vlaanderen (geolocation) |
+| Parcelle | SPW `CADMAP_PARCELLES` | Adpf (parcelles administratives) |
+| Bâtiment | PICC du SPW | GRB `GBG` |
+| Bord de voirie / trottoir | PICC « Voirie - Ligne » | GRB `WGO` |
+| Nom de rue | axe de voirie PICC | GRB `Wegsegment` |
+
+Les numéros de parcelle sont décodés du CaPaKey dans les deux régions.
 
 1. Passez dans une vue **en plan, de détail, en coupe ou en élévation**.
 2. **pyKalfa** → **Parsel / Bina** → **Parsel/Bina GIS**.
 3. Dans l'ordre :
-   - saisissez une **adresse** (p. ex. `Rue du Parc 4, 4577 Modave`) ou
+   - saisissez une **adresse** (p. ex. `Rue du Parc 4, 4577 Modave`,
+     `Steenstraat 10, 8000 Brugge`) ou
      un **CaPaKey** (p. ex. `92053D0515/00B002`)
    - choisissez l'un des résultats (la question est reposée si rien n'est
      trouvé)
@@ -142,8 +154,13 @@ attributs cadastraux de la parcelle.
 > Les numéros de parcelles viennent des données : aucune erreur d'OCR.
 > Une image de contrôle est laissée dans `output/revit_input_preview.png`.
 >
-> Source : Plan parcellaire cadastral © AGDP/SPF Finances, via SPW ;
-> Bâtiments, voirie © SPW (PICC_VDIFF).
+> En Flandre, les bords de voirie sont les trois types GRB `WGO` : bord de
+> chaussée, limite de zone piétons/cyclistes (trottoir) et limite de zone
+> non revêtue.
+>
+> Source — Wallonie : Plan parcellaire cadastral © AGDP/SPF Finances, via
+> SPW ; Bâtiments, voirie © SPW (PICC_VDIFF). Flandre : Adpf © AAPD/FOD
+> Financiën, via Digitaal Vlaanderen ; GRB © Digitaal Vlaanderen.
 
 ### Rölöve Prototip — prototype de bâtiment depuis un scan Polycam
 

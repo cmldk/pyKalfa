@@ -10,7 +10,7 @@ geometrisi, Polycam taramasından da döşemeli bir bina prototipi üretir.
 | Buton | Ne yapar |
 | --- | --- |
 | **Parsel/Bina Aktar** | Kadastro görüntülerinden (PNG) parsel sınırlarını `DetailLine`, bina alanlarını `FilledRegion`, parsel numaralarını `TextNote` olarak Revit'e çizer. |
-| **Parsel/Bina GIS** | Valonya'da adres veya CaPaKey ile SPW geoportalından parsel sınırlarını, binaları ve parsel numaralarını alıp Parsel/Bina Aktar ile aynı stillerle çizer. OCR ve görsel gerekmez. |
+| **Parsel/Bina GIS** | Valonya ve Flaman bölgesinde adres veya CaPaKey ile bölgenin GIS servislerinden parsel sınırlarını, binaları ve parsel numaralarını alıp Parsel/Bina Aktar ile aynı stillerle çizer. OCR ve görsel gerekmez. |
 | **Rölöve Prototip** | Aynı Polycam taramasından toparlanmış, döşemeli hızlı prototip: dik köşeler, katlar arası hizalı dış duvarlar, her katta döşeme. |
 
 ## Gereksinimler
@@ -92,14 +92,26 @@ doğrulanamazsa uyarı verilir.
 
 ### Parsel/Bina GIS
 
-Yalnız **Valonya** için ve internet bağlantısı gerekir. Görüntü, ölçek ve
-OCR yoktur: parsel sınırları SPW `CADMAP_PARCELLES`, binalar SPW PICC,
-parsel numaraları parselin kadastro özniteliklerinden gelir.
+**Valonya** ve **Flaman bölgesi** için; internet bağlantısı gerekir.
+Görüntü, ölçek ve OCR yoktur. Adres adayları iki bölgeden aynı listede
+gelir (her satırda bölge yazar); CaPaKey önce Valonya'da, sonra Flaman
+bölgesinde aranır. Brüksel desteklenmez.
+
+| | Valonya | Flaman bölgesi |
+|---|---|---|
+| Adres | ICAR (SPW) | Digitaal Vlaanderen (geolocation) |
+| Parsel | SPW `CADMAP_PARCELLES` | Adpf (idari parseller) |
+| Bina | SPW PICC | GRB `GBG` |
+| Yol / kaldırım kenarı | PICC "Voirie - Ligne" | GRB `WGO` |
+| Sokak adı | PICC yol ekseni | GRB `Wegsegment` |
+
+Parsel numaraları iki bölgede de CaPaKey'den çözülür.
 
 1. **Plan, detay, kesit veya cephe** görünümüne geçin.
 2. **pyKalfa** → **Parsel / Bina** → **Parsel/Bina GIS**.
 3. Sırasıyla:
-   - **adres** (ör. `Rue du Parc 4, 4577 Modave`) veya **CaPaKey**
+   - **adres** (ör. `Rue du Parc 4, 4577 Modave`, `Steenstraat 10, 8000
+     Brugge`) veya **CaPaKey**
      (ör. `92053D0515/00B002`) yazın
    - bulunan adaylardan birini seçin (bulunamazsa tekrar sorulur)
    - parselin etrafında **kaç metre** alınacağını yazın (varsayılan 80,
@@ -125,12 +137,15 @@ parsel numaraları parselin kadastro özniteliklerinden gelir.
 > vb. çizilmez). Sokak adları yol eksenlerinden gelir: her ad bir kez, en uzun
 > eksen parçasının ortasına, yol yönünde döndürülmüş ve ortalanmış yazılır.
 > PICC'nin ayrıntılı olmadığı kırsal yerlerde yol çizgisi çıkmayabilir.
+> Flaman bölgesinde yol kenarları GRB `WGO` katmanının üç türüdür: rijbaan
+> kenarı, yaya/bisiklet bölgesi (kaldırım) sınırı, stabilize bölge sınırı.
 
 > Parsel numaraları veriden okunduğu için OCR hatası yoktur. Kontrol için
 > `output/revit_input_preview.png` görseli bırakılır.
 >
-> Kaynak: Plan parcellaire cadastral © AGDP/SPF Finances, via SPW ;
-> Bâtiments, voirie © SPW (PICC_VDIFF).
+> Kaynak — Valonya: Plan parcellaire cadastral © AGDP/SPF Finances, via SPW ;
+> Bâtiments, voirie © SPW (PICC_VDIFF). Flaman: Adpf © AAPD/FOD Financiën,
+> via Digitaal Vlaanderen ; GRB © Digitaal Vlaanderen.
 
 ### Rölöve Prototip
 

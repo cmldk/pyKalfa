@@ -5,9 +5,11 @@ hangi kod sayfasiyla okursa okusun aksanli adresler bozulmasin.
 
     suggest_cli.py --query "Rue du Parc 4 Modave" --output output/gis_suggest.json
 
-Metin CaPaKey kalibina uyuyorsa adres yerine parsel sorulur; bulunursa tek
-aday (`precision: "capakey"`), bulunmazsa bos liste. `--x/--y` ile secilen
-adres noktasinin 20 m icindeki parseli ayni bicimde dondurulur.
+Adres adaylari Valonya + Flaman bolgesinden ayni listede gelir; her aday
+`region` ("wal" / "vla") tasir. Metin CaPaKey kalibina uyuyorsa adres yerine
+parsel sorulur (once Valonya, sonra Flaman); bulunursa tek aday
+(`precision: "capakey"`), bulunmazsa bos liste. `--x/--y [--region]` ile
+secilen adres noktasinin 20 m icindeki parseli ayni bicimde dondurulur.
 Cikis kodlari: 0 basari (bos liste dahil), 2 servis hatasi.
 """
 
@@ -18,28 +20,28 @@ import json
 import sys
 from pathlib import Path
 
+import regions
 import services
 from gis_http import UpstreamError
 
 
-def _parcel_candidate(p):
+def _parcel_candidate(p, region):
     numero = services.parcel_numero(p["attributes"])
     return {"label": "CaPaKey {} - parsel {}".format(p["capakey"], numero), "capakey": p["capakey"],
-            "numero": numero, "precision": "capakey"}
+            "numero": numero, "precision": "capakey", "region": region}
 
 
-def resolve_point(x, y):
+def resolve_point(x, y, region="wal"):
     """Secilen adres noktasinin 20 m icindeki parseli (stil secimlerinden ONCE)."""
-    p = services.parcel_by_point(x, y, services.ADDRESS_SEARCH_M)
-    return [_parcel_candidate(p)] if p else []
+    p = regions.module(region).parcel_by_point(x, y, services.ADDRESS_SEARCH_M)
+    return [_parcel_candidate(p, region)] if p else []
 
 
 def candidates(query):
     if services.is_capakey(query):
-        ck = services.normalise_capakey(query)
-        p = services.parcel_by_capakey(ck)
-        return [_parcel_candidate(p)] if p else []
-    return services.suggest(query)
+        region, p = regions.parcel_by_capakey_any(services.normalise_capakey(query))
+        return [_parcel_candidate(p, region)] if p else []
+    return regions.suggest_all(query)
 
 
 def _write(path, payload):
@@ -52,6 +54,7 @@ def main(argv=None):
     parser.add_argument("--query")
     parser.add_argument("--x", type=float)
     parser.add_argument("--y", type=float)
+    parser.add_argument("--region", choices=sorted(regions.REGIONS), default="wal")
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args(argv)
     if args.query is None and (args.x is None or args.y is None):
@@ -60,7 +63,7 @@ def main(argv=None):
         if args.query is not None:
             cands = candidates(args.query.strip())
         else:
-            cands = resolve_point(args.x, args.y)
+            cands = resolve_point(args.x, args.y, args.region)
     except UpstreamError as ex:
         _write(args.output, {"query": args.query, "error": str(ex)})
         print("ERROR|{}".format(ex), flush=True)

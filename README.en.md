@@ -10,7 +10,7 @@ cadastral data, and builds a floored building prototype from a Polycam scan.
 | Button | What it does |
 | --- | --- |
 | **Parsel/Bina Aktar** | Turns cadastral images (PNG) into Revit geometry: parcel boundaries as `DetailLine`, buildings as `FilledRegion`, parcel numbers as `TextNote`. |
-| **Parsel/Bina GIS** | In Wallonia, fetches parcel boundaries, buildings and parcel numbers from the SPW geoportal by address or CaPaKey and draws them with the same styles as Parsel/Bina Aktar. No images or OCR needed. |
+| **Parsel/Bina GIS** | In Wallonia and Flanders, fetches parcel boundaries, buildings and parcel numbers from the regional GIS services by address or CaPaKey and draws them with the same styles as Parsel/Bina Aktar. No images or OCR needed. |
 | **Rölöve Prototip** | Tidied, floored quick prototype from the same Polycam scan: square corners, exterior walls aligned between storeys, a floor slab on every level. |
 
 ## Requirements
@@ -90,15 +90,26 @@ alignment cannot be verified you get a warning.
 
 ### Parsel/Bina GIS — parcels and buildings from the geoportal
 
-**Wallonia only**, and an internet connection is required. There are no
-images, no scale and no OCR: parcel boundaries come from SPW
-`CADMAP_PARCELLES`, buildings from SPW PICC, and parcel numbers from the
-parcel's cadastral attributes.
+For **Wallonia** and **Flanders**; an internet connection is required.
+There are no images, no scale and no OCR. Address candidates from both
+regions come in one list (each row names its region); a CaPaKey is looked
+up in Wallonia first, then in Flanders. Brussels is not supported.
+
+| | Wallonia | Flanders |
+|---|---|---|
+| Address | ICAR (SPW) | Digitaal Vlaanderen (geolocation) |
+| Parcel | SPW `CADMAP_PARCELLES` | Adpf (administrative parcels) |
+| Building | SPW PICC | GRB `GBG` |
+| Road / sidewalk edge | PICC "Voirie - Ligne" | GRB `WGO` |
+| Street name | PICC road axis | GRB `Wegsegment` |
+
+Parcel numbers are decoded from the CaPaKey in both regions.
 
 1. Switch to a **plan, detail, section or elevation** view.
 2. **pyKalfa** → **Parsel / Bina** → **Parsel/Bina GIS**.
 3. In order:
-   - type an **address** (e.g. `Rue du Parc 4, 4577 Modave`) or a
+   - type an **address** (e.g. `Rue du Parc 4, 4577 Modave`,
+     `Steenstraat 10, 8000 Brugge`) or a
      **CaPaKey** (e.g. `92053D0515/00B002`)
    - pick one of the candidates found (you are asked again if none is
      found)
@@ -131,8 +142,12 @@ parcel's cadastral attributes.
 > Parcel numbers come from the data, so there are no OCR errors. A check
 > image is left at `output/revit_input_preview.png`.
 >
-> Source: Plan parcellaire cadastral © AGDP/SPF Finances, via SPW ;
-> Bâtiments, voirie © SPW (PICC_VDIFF).
+> In Flanders, road edges are the three GRB `WGO` types: carriageway edge,
+> pedestrian/cycle zone (sidewalk) border and unpaved zone border.
+>
+> Source — Wallonia: Plan parcellaire cadastral © AGDP/SPF Finances, via SPW ;
+> Bâtiments, voirie © SPW (PICC_VDIFF). Flanders: Adpf © AAPD/FOD Financiën,
+> via Digitaal Vlaanderen ; GRB © Digitaal Vlaanderen.
 
 ### Rölöve Prototip — building prototype from a Polycam scan
 

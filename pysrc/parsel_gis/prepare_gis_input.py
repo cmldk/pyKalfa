@@ -2,6 +2,10 @@
 
     prepare_gis_input.py --capakey 92053D0515/00B002 --margin 80 --output-dir output
     prepare_gis_input.py --x 210000 --y 120000 --margin 80 --output-dir output [--no-labels] [--no-roads] [--no-streets]
+    prepare_gis_input.py --capakey 31804D0468/00A000 --region vla --margin 80 --output-dir output
+
+`--region`: "wal" (Valonya, SPW; varsayilan) ya da "vla" (Flaman, Digitaal
+Vlaanderen). Cikti bicimi bolgeden bagimsizdir.
 
 Cikti bicimi mevcut Parsel/Bina Aktar butonunun `revit_input.json`'u ile
 aynidir (`parcel_lines`, `frame_lines`, `buildings`, `labels`, `north`),
@@ -21,10 +25,9 @@ from pathlib import Path
 
 import layout
 import preview
+import regions as gis_regions
 import services
 from gis_http import UpstreamError
-
-ATTRIBUTION = "Plan parcellaire cadastral © AGDP/SPF Finances, via SPW ; Bâtiments, voirie © SPW (PICC_VDIFF)"
 
 
 class NotFound(Exception):
@@ -39,7 +42,11 @@ def _progress(percent, message):
     print("PROGRESS|{}|{}".format(percent, message), flush=True)
 
 
-def prepare(capakey, x, y, margin_m, output_dir, labels=True, roads=True, streets=True):
+def prepare(capakey, x, y, margin_m, output_dir, labels=True, roads=True, streets=True, region="wal"):
+    try:
+        svc = gis_regions.module(region)
+    except ValueError as ex:
+        raise BadInput(str(ex))
     if not (0 < margin_m <= layout.MAX_MARGIN_M):
         raise BadInput("Pay 0 ile {:.0f} m arasinda olmali (verilen: {})".format(layout.MAX_MARGIN_M, margin_m))
     output_dir = Path(output_dir)
@@ -47,29 +54,30 @@ def prepare(capakey, x, y, margin_m, output_dir, labels=True, roads=True, street
     _progress(5, "Parsel araniyor")
     if capakey:
         try:
-            selected = services.parcel_by_capakey(capakey)
+            selected = svc.parcel_by_capakey(capakey)
         except ValueError as ex:
             raise BadInput(str(ex))
         if not selected:
-            raise NotFound("CaPaKey {} plan parcellaire'de bulunamadi.".format(services.normalise_capakey(capakey)))
+            raise NotFound("CaPaKey {} {} kadastro verisinde bulunamadi.".format(
+                services.normalise_capakey(capakey), gis_regions.NAMES[region]))
     elif x is not None and y is not None:
-        selected = services.parcel_by_point(x, y, services.ADDRESS_SEARCH_M)
+        selected = svc.parcel_by_point(x, y, services.ADDRESS_SEARCH_M)
         if not selected:
-            raise NotFound("Bu adreste {} m icinde kadastro parseli yok (kamusal alan veya Valonya disi?).".format(
-                services.ADDRESS_SEARCH_M))
+            raise NotFound("Bu adreste {} m icinde kadastro parseli yok (kamusal alan veya {} disi?).".format(
+                services.ADDRESS_SEARCH_M, gis_regions.NAMES[region]))
     else:
         raise BadInput("--capakey veya --x/--y gerekli")
 
     box = layout.frame_box(selected["rings"], margin_m)
     _progress(30, "Komsu parseller")
-    parcels = services.parcels_in_box(box)
+    parcels = svc.parcels_in_box(box)
     if not any(p["capakey"] == selected["capakey"] for p in parcels):
         parcels.append(selected)
     _progress(50, "Binalar")
-    buildings = services.buildings_in_box(box)
+    buildings = svc.buildings_in_box(box)
     _progress(65, "Yollar")
-    road_items = services.road_lines_in_box(box) if roads else []
-    axes = services.street_axes_in_box(box) if streets else []
+    road_items = svc.road_lines_in_box(box) if roads else []
+    axes = svc.street_axes_in_box(box) if streets else []
 
     _progress(85, "Geometri")
     parcel_lines = layout.parcel_segments(parcels, box, exclude=selected)
@@ -81,7 +89,8 @@ def prepare(capakey, x, y, margin_m, output_dir, labels=True, roads=True, street
 
     data = {
         "source": "GIS",
-        "attribution": ATTRIBUTION,
+        "region": region,
+        "attribution": gis_regions.ATTRIBUTION[region],
         "margin_m": margin_m,
         "selected": {"capakey": selected["capakey"], "numero": services.parcel_numero(selected["attributes"])},
         "box_lambert72": [round(v, 3) for v in box],
@@ -98,10 +107,10 @@ def prepare(capakey, x, y, margin_m, output_dir, labels=True, roads=True, street
         "buildings": regions,
         "labels": label_records,
         "road_line_count": len(road_lines),
-        "road_lines_note": "Yol ve kaldirim kenarlari (PICC 20: Voirie - Bord, Chemin - Bord, Trottoir); DetailLine segmentleri, ust uste binenler tek.",
+        "road_lines_note": "Yol ve kaldirim kenarlari (Valonya: PICC 20 Voirie - Bord, Chemin - Bord, Trottoir; Flaman: GRB WGO); DetailLine segmentleri, ust uste binenler tek.",
         "road_lines": road_lines,
         "street_label_count": len(street_records),
-        "street_labels_note": "Sokak adlari (PICC 21 RUE_NOM1, yoksa VOIRIE_NOM); position_ft metnin ORTASI, rotation_deg yol yonu (-90..90].",
+        "street_labels_note": "Sokak adlari (Valonya: PICC 21 RUE_NOM1/VOIRIE_NOM; Flaman: GRB Wegsegment LSTRNM/RSTRNM); position_ft metnin ORTASI, rotation_deg yol yonu (-90..90].",
         "street_labels": street_records,
     }
 
@@ -119,10 +128,11 @@ def prepare(capakey, x, y, margin_m, output_dir, labels=True, roads=True, street
 
 
 def main(argv=None):
-    parser = argparse.ArgumentParser(description="SPW verisinden Revit ara formati")
+    parser = argparse.ArgumentParser(description="SPW / Digitaal Vlaanderen verisinden Revit ara formati")
     parser.add_argument("--capakey")
     parser.add_argument("--x", type=float)
     parser.add_argument("--y", type=float)
+    parser.add_argument("--region", choices=sorted(gis_regions.REGIONS), default="wal")
     parser.add_argument("--margin", type=float, default=80.0)
     parser.add_argument("--output-dir", type=Path, default=Path("output"))
     parser.add_argument("--labels", action=argparse.BooleanOptionalAction, default=True)
@@ -131,7 +141,7 @@ def main(argv=None):
     args = parser.parse_args(argv)
     try:
         prepare(args.capakey, args.x, args.y, args.margin, args.output_dir,
-                labels=args.labels, roads=args.roads, streets=args.streets)
+                labels=args.labels, roads=args.roads, streets=args.streets, region=args.region)
     except UpstreamError as ex:
         print("ERROR|Servis hatasi: {}".format(ex), flush=True)
         return 2

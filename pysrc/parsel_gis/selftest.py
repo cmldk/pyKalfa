@@ -405,6 +405,238 @@ def test_suggest_cli_resolves_point():
     assert json.loads(out.read_text(encoding="utf-8"))["candidates"] == []
 
 
+# --- Flaman bolgesi (Digitaal Vlaanderen) -------------------------------------
+
+def _fl():
+    import flanders
+    return flanders
+
+
+def _regions():
+    import regions
+    return regions
+
+
+class FakeVl:
+    """Flaman servisleri: geolocation (path -> cevap) ve WFS (typeNames ->
+    feature listesi ya da `fn(params) -> liste`). Valonya yollari icin
+    `wal` (Fake routes) verilebilir."""
+
+    def __init__(self, layers=None, geoloc=None, wal=None, fail=()):
+        self.layers = layers or {}
+        self.geoloc = geoloc or {}
+        self.wal = Fake(wal or [])
+        self.fail = fail
+        self.calls = []
+
+    def __call__(self, url, params, post, timeout):
+        self.calls.append((url, dict(params)))
+        for part in self.fail:
+            if part in url:
+                raise gis_http.UpstreamError("{} dustu".format(part))
+        if "geo.api.vlaanderen.be/geolocation" in url:
+            for key, answer in self.geoloc.items():
+                if url.endswith(key[0]) and params.get("q") == key[1]:
+                    return answer
+            return {"LocationResult": [], "SuggestionResult": []}
+        if "geo.api.vlaanderen.be" in url and url.endswith("/wfs"):
+            src = self.layers.get(params.get("typeNames"), [])
+            feats = src(params) if callable(src) else src
+            return {"type": "FeatureCollection", "features": feats}
+        return self.wal(url, params, post, timeout)
+
+    def wfs_calls(self, type_name):
+        return [p for (u, p) in self.calls if p.get("typeNames") == type_name]
+
+
+def install_vl(**kw):
+    fake = FakeVl(**kw)
+    gis_http.set_transport(fake)
+    return fake
+
+
+def gj_poly(oid, rings, multi=False, **props):
+    p = {"OIDN": oid}
+    p.update(props)
+    geom = ({"type": "MultiPolygon", "coordinates": [rings]} if multi
+            else {"type": "Polygon", "coordinates": rings})
+    return {"type": "Feature", "properties": p, "geometry": geom}
+
+
+def gj_line(oid, path, multi=False, **props):
+    p = {"OIDN": oid}
+    p.update(props)
+    geom = ({"type": "MultiLineString", "coordinates": [path]} if multi
+            else {"type": "LineString", "coordinates": path})
+    return {"type": "Feature", "properties": p, "geometry": geom}
+
+
+def _loc(addr, x, y, kind="basisregisters_huisnummer_afgeleidVanObject", bbox=None):
+    b = bbox or (x, y, x, y)
+    return {"FormattedAddress": addr, "LocationType": kind,
+            "Location": {"X_Lambert72": x, "Y_Lambert72": y},
+            "BoundingBox": {"LowerLeft": {"X_Lambert72": b[0], "Y_Lambert72": b[1]},
+                            "UpperRight": {"X_Lambert72": b[2], "Y_Lambert72": b[3]}}}
+
+
+def test_flanders_suggest_from_location():
+    fl = _fl()
+    install_vl(geoloc={("/Location", "steenstraat 10 brugge"): {"LocationResult": [
+        _loc("Steenstraat 10, 8000 Brugge", 69975.93, 211528.5)]}})
+    out = fl.suggest("steenstraat 10 brugge")
+    assert out == [{"label": "Steenstraat 10, 8000 Brugge", "x": 69975.93, "y": 211528.5,
+                    "precision": "house", "region": "vla"}], out
+
+
+def test_flanders_suggest_falls_back_to_suggestion_list():
+    fl = _fl()
+    fake = install_vl(geoloc={
+        ("/Suggestion", "steenstraat brugge"): {"SuggestionResult": ["Steenstraat, Brugge"]},
+        ("/Location", "Steenstraat, Brugge"): {"LocationResult": [
+            _loc("Steenstraat, Brugge", 69900.0, 211500.0, kind="basisregisters_straatnaam",
+                 bbox=(69800.0, 211400.0, 70000.0, 211600.0))]}})
+    out = fl.suggest("steenstraat brugge")
+    assert out == [{"label": "Steenstraat, Brugge", "x": 69900.0, "y": 211500.0,
+                    "precision": "street-bbox-centre", "region": "vla"}], out
+    assert [p["q"] for (u, p) in fake.calls] == ["steenstraat brugge", "steenstraat brugge",
+                                                 "Steenstraat, Brugge"], fake.calls
+
+
+def test_suggest_all_merges_regions_and_tolerates_one_failure():
+    rg = _regions()
+    wal = [("geocodeWS/geocode", {"candidates": [{
+        "street": {"name": "Rue du Parc"}, "house": {"name": "4", "geometry": {"coordinates": [210000.0, 120000.0]}},
+        "zone": {"ident": "4577"}, "city": {"name": "Modave"}}]}),
+        ("geocodeWS/searchAll", {"candidates": []})]
+    vl = {("/Location", "parc 4"): {"LocationResult": [_loc("Parkstraat 4, 8000 Brugge", 70000.0, 211000.0)]}}
+    install_vl(geoloc=vl, wal=wal)
+    out = rg.suggest_all("parc 4")
+    assert [c["region"] for c in out] == ["wal", "vla"], out
+    install_vl(geoloc=vl, fail=("geocodeWS",))
+    assert [c["region"] for c in rg.suggest_all("parc 4")] == ["vla"]
+    install_vl(fail=("geocodeWS", "geo.api.vlaanderen.be"))
+    try:
+        rg.suggest_all("parc 4")
+        assert False, "UpstreamError bekleniyordu"
+    except gis_http.UpstreamError:
+        pass
+
+
+def test_flanders_parcel_by_capakey_and_numero():
+    fl = _fl()
+    fake = install_vl(layers={"Adpf:Adpf": [gj_poly(
+        11, [[[70000, 211000], [70010, 211000], [70010, 211010], [70000, 211000]]], multi=True,
+        CAPAKEY="31804D0468/00A000")]})
+    p = fl.parcel_by_capakey(" 31804d0468/00a000 ")
+    assert p["capakey"] == "31804D0468/00A000" and len(p["rings"]) == 1, p
+    assert services.parcel_numero(p["attributes"]) == "468A", p["attributes"]
+    assert "CAPAKEY='31804D0468/00A000'" in fake.wfs_calls("Adpf:Adpf")[0]["CQL_FILTER"]
+    assert fake.wfs_calls("Adpf:Adpf")[0]["srsName"] == "EPSG:31370"
+
+
+def test_flanders_parcel_by_point_picks_nearest():
+    fl = _fl()
+    fake = install_vl(layers={"Adpf:Adpf": [
+        gj_poly(1, square(115, 90, 10), CAPAKEY="FAR"), gj_poly(2, square(105, 90, 10), CAPAKEY="NEAR")]})
+    assert fl.parcel_by_point(100, 100, 20)["capakey"] == "NEAR"
+    bbox = fake.wfs_calls("Adpf:Adpf")[0]["bbox"]
+    assert bbox.startswith("80.00,80.00,120.00,120.00") and bbox.endswith("EPSG:31370"), bbox
+
+
+def test_flanders_wfs_splits_full_box_and_dedupes():
+    fl = _fl()
+    old = fl.WFS_COUNT
+    fl.WFS_COUNT = 3
+    feats = [gj_poly(i, square(i * 10, 0, 5), CAPAKEY="K{}".format(i)) for i in range(5)]
+
+    def answer(params):
+        x0, y0, x1, y1 = [float(v) for v in params["bbox"].split(",")[:4]]
+        inside = [f for f in feats
+                  if x0 <= f["geometry"]["coordinates"][0][0][0] <= x1]
+        return inside[:fl.WFS_COUNT] if x1 - x0 > 30 else inside
+    try:
+        fake = install_vl(layers={"Adpf:Adpf": answer})
+        got = fl.parcels_in_box((0, 0, 60, 60))
+    finally:
+        fl.WFS_COUNT = old
+    assert sorted(p["capakey"] for p in got) == ["K0", "K1", "K2", "K3", "K4"], got
+    assert len(fake.wfs_calls("Adpf:Adpf")) > 1
+
+
+def test_flanders_buildings_roads_streets():
+    fl = _fl()
+    install_vl(layers={
+        "GRB:GBG": [gj_poly(7, square(0, 0, 8), LBLTYPE="hoofdgebouw")],
+        "GRB:WGO": [gj_line(1, [[0, 0], [10, 0]], TYPE=3, LBLTYPE="rand van de rijbaan (wrb)"),
+                    gj_line(2, [[0, 5], [10, 5]], multi=True, TYPE=1,
+                            LBLTYPE="grens zone zwakke weggebruiker (wcz)"),
+                    gj_line(2, [[0, 5], [10, 5]], TYPE=1)],
+        "GRB:Wegsegment": [gj_line(3, [[0, 0], [50, 0]], LSTRNM="Steenstraat", RSTRNM="Steenstraat"),
+                           gj_line(4, [[0, 0], [0, 50]], LSTRNM=None, RSTRNM="Markt"),
+                           gj_line(5, [[0, 0], [5, 5]], LSTRNM=" ", RSTRNM=None)]})
+    b = fl.buildings_in_box((0, 0, 50, 50))
+    assert [x["id"] for x in b] == [7] and b[0]["nature"] == "hoofdgebouw", b
+    r = fl.road_lines_in_box((0, 0, 50, 50))
+    assert [x["id"] for x in r] == [1, 2] and r[1]["paths"] == [[[0.0, 5.0], [10.0, 5.0]]], r
+    s = fl.street_axes_in_box((0, 0, 50, 50))
+    assert [x["name"] for x in s] == ["Steenstraat", "Markt"], s
+
+
+def test_flanders_rejects_bad_coordinates():
+    fl = _fl()
+    install_vl(layers={"GRB:GBG": [gj_poly(1, [[[0, 0], [1e9, 0], [1e9, 1], [0, 0]]])],
+                       "Adpf:Adpf": [gj_poly(2, [[["a", 0], [1, 0], [1, 1], ["a", 0]]], CAPAKEY="X")]})
+    assert fl.buildings_in_box((0, 0, 5, 5)) == []
+    assert fl.parcels_in_box((0, 0, 5, 5)) == []
+
+
+def _vl_world():
+    sel = gj_poly(1, square(70000, 211000, 20), CAPAKEY="31804D0468/00A000")
+    nb = gj_poly(2, square(70020, 211000, 20), CAPAKEY="31804D0469/00_000")
+    return {"Adpf:Adpf": [sel, nb], "GRB:GBG": [gj_poly(7, square(70005, 211005, 8))],
+            "GRB:WGO": [gj_line(1, [[69990, 210995], [70050, 210995]], TYPE=3)],
+            "GRB:Wegsegment": [gj_line(5, [[69980, 210990], [70060, 210990]], LSTRNM="Steenstraat")]}
+
+
+def test_parcel_by_capakey_any_falls_back_to_flanders():
+    rg = _regions()
+    install_vl(layers=_vl_world(), wal=[(services.CADMAP_LAYER, {"features": []})])
+    region, p = rg.parcel_by_capakey_any("31804D0468/00A000")
+    assert region == "vla" and p["capakey"] == "31804D0468/00A000", (region, p)
+    install(_world())
+    region, p = rg.parcel_by_capakey_any("92053D0515/00B002")
+    assert region == "wal", region
+
+
+def test_suggest_cli_regions():
+    install_vl(layers=_vl_world(), wal=[(services.CADMAP_LAYER, {"features": []})])
+    out = _tmp() / "r.json"
+    assert suggest_cli.main(["--query", "31804D0468/00A000", "--output", str(out)]) == 0
+    c = json.loads(out.read_text(encoding="utf-8"))["candidates"]
+    assert c[0]["region"] == "vla" and c[0]["numero"] == "468A", c
+    assert suggest_cli.main(["--x", "70010", "--y", "211010", "--region", "vla",
+                             "--output", str(out)]) == 0
+    c = json.loads(out.read_text(encoding="utf-8"))["candidates"]
+    assert c[0]["capakey"] == "31804D0468/00A000" and c[0]["region"] == "vla", c
+    install(_world())
+    assert suggest_cli.main(["--x", "200010", "--y", "100010", "--output", str(out)]) == 0
+    assert json.loads(out.read_text(encoding="utf-8"))["candidates"][0]["region"] == "wal"
+
+
+def test_prepare_region_vla():
+    install_vl(layers=_vl_world())
+    tmp = _tmp()
+    rc = prepare_gis_input.main(["--capakey", "31804D0468/00A000", "--region", "vla",
+                                 "--margin", "30", "--output-dir", str(tmp)])
+    assert rc == 0, rc
+    data = json.loads((tmp / "revit_input.json").read_text(encoding="utf-8"))
+    assert data["selected"] == {"capakey": "31804D0468/00A000", "numero": "468A"}, data["selected"]
+    assert data["region"] == "vla" and "Digitaal Vlaanderen" in data["attribution"]
+    assert data["building_count"] == 1 and data["road_lines"] and \
+        [s["text"] for s in data["street_labels"]] == ["Steenstraat"]
+    assert {l["text"] for l in data["labels"]} == {"468A", "469"}
+
+
 # --- Calistirici --------------------------------------------------------------
 
 def _tests():
@@ -446,8 +678,28 @@ def live():
     assert data["parcel_lines"] and data["labels"], "cizgi/etiket yok"
     data2 = prepare_gis_input.prepare(None, cands[0]["x"], cands[0]["y"], 30, out_dir / "live_address")
     print("adres -> parsel {} ({})".format(data2["selected"]["numero"], data2["selected"]["capakey"]))
+    _live_flanders(out_dir / "live_vla")
     print("LIVE OK")
     return 0
+
+
+LIVE_ADDRESS_VLA = "Steenstraat 10 Brugge"
+
+
+def _live_flanders(out_dir):
+    import regions
+    cands = regions.suggest_all(LIVE_ADDRESS_VLA)
+    print("suggest_all({!r}): {}".format(LIVE_ADDRESS_VLA, [(c["region"], c["label"]) for c in cands]))
+    vla = [c for c in cands if c["region"] == "vla"]
+    assert vla, "Flaman adayi yok"
+    data = prepare_gis_input.prepare(None, vla[0]["x"], vla[0]["y"], 80, out_dir, region="vla")
+    ck = data["selected"]["capakey"]
+    region, p = regions.parcel_by_capakey_any(ck)
+    assert region == "vla" and p, (region, ck)
+    print("Flaman: parsel {} ({}) | parsel {} | bina {} | yol cizgisi {} | sokak adi {}".format(
+        data["selected"]["numero"], ck, data["parcel_count"], data["building_count"],
+        data["road_line_count"], data["street_label_count"]))
+    assert data["parcel_lines"] and data["building_count"] and data["road_lines"] and data["street_labels"]
 
 
 if __name__ == "__main__":

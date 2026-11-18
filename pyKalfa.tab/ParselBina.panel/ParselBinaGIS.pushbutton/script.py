@@ -1,10 +1,11 @@
 # -*- coding: utf-8 -*-
-"""pyKalfa / Parsel-Bina GIS: adres veya CaPaKey -> SPW verisi -> Revit
+"""pyKalfa / Parsel-Bina GIS: adres veya CaPaKey -> bolge GIS verisi -> Revit
 
-Parsel/Bina Aktar ile ayni cizimi, kadastro goruntuleri yerine Valonya
-geoportalinin (SPW) dondurdugu veriden yapar: parsel sinirlari CADMAP,
-binalar PICC, parsel numaralari parsel ozniteliklerinden. OCR, olcek ve
-hizalama yoktur.
+Parsel/Bina Aktar ile ayni cizimi, kadastro goruntuleri yerine bolge
+servislerinin dondurdugu veriden yapar. Valonya: SPW (CADMAP parsel, PICC
+bina/yol). Flaman: Digitaal Vlaanderen (Adpf parsel, GRB bina/yol). Adres
+adaylari iki bolgeden ayni listede gelir; secilen adayin bolgesi
+(`region`) hazirliga iletilir. OCR, olcek ve hizalama yoktur.
 
 Akis (mevcut butonla ayni mantik): once butun girdiler (arama, pay, stiller),
 sonra tek alt surec (ilerleme cubugu ile), en sonda tek transaction.
@@ -44,7 +45,7 @@ PRECISION_LABELS = {
     "street-bbox-centre": u"sokak",
     "capakey": u"CaPaKey",
 }
-
+REGION_LABELS = {"wal": u"Valonya", "vla": u"Flaman"}
 # Bkz. ImportGeometry script.py: asama icinde cubuk yavasca ilerletilir.
 PROGRESS_CREEP_LIMIT = 18
 PROGRESS_CREEP_EVERY = 5
@@ -102,8 +103,14 @@ def _run_suggest(args):
     return payload.get("candidates") or []
 
 
+def _region(c):
+    return c.get("region") or "wal"
+
+
 def _option_label(c):
-    return u"{}  ({})".format(c.get("label"), PRECISION_LABELS.get(c.get("precision"), c.get("precision")))
+    return u"{}  ({}, {})".format(c.get("label"),
+                                 PRECISION_LABELS.get(c.get("precision"), c.get("precision")),
+                                 REGION_LABELS.get(_region(c), _region(c)))
 
 
 def ask_location():
@@ -115,7 +122,8 @@ def ask_location():
     while True:
         text = forms.ask_for_string(
             default=default,
-            prompt="Adres veya CaPaKey girin (ör. Rue du Parc 4, 4577 Modave  /  92053D0515/00B002)",
+            prompt="Adres veya CaPaKey girin - Valonya / Flaman (ör. Rue du Parc 4, 4577 Modave  /  "
+                   "Steenstraat 10, 8000 Brugge  /  92053D0515/00B002)",
             title="Parsel/Bina GIS",
         )
         if not text or not text.strip():
@@ -141,7 +149,8 @@ def ask_location():
         if candidate.get("capakey"):
             return candidate, None
 
-        parcels = _run_suggest(["--x", repr(float(candidate["x"])), "--y", repr(float(candidate["y"]))])
+        parcels = _run_suggest(["--x", repr(float(candidate["x"])), "--y", repr(float(candidate["y"])),
+                                "--region", _region(candidate)])
         if parcels:
             return parcels[0], candidate.get("label")
         forms.alert(u"Bu adresin 20 m icinde kadastro parseli yok:\n{}\n\nBaska bir adres "
@@ -219,7 +228,8 @@ except Exception as ex:
     script.exit()
 
 # --- 4) Veri cekme (tek alt surec, ilerleme cubugu ile) -----------------------
-prepare_args = ["--capakey", location["capakey"], "--margin", repr(margin_m), "--output-dir", OUTPUT_DIR]
+prepare_args = ["--capakey", location["capakey"], "--region", _region(location),
+                "--margin", repr(margin_m), "--output-dir", OUTPUT_DIR]
 if chosen_text_note_type is None:
     prepare_args.append("--no-labels")
 if chosen_road_style is None:
@@ -299,7 +309,8 @@ _remove(SUGGEST_JSON)
 preview_path = os.path.join(OUTPUT_DIR, "revit_input_preview.png")
 
 selected = data.get("selected") or {}
-summary = u"Parsel: {} ({})\n".format(selected.get("numero"), selected.get("capakey"))
+summary = u"Parsel: {} ({}) - {}\n".format(selected.get("numero"), selected.get("capakey"),
+                                          REGION_LABELS.get(_region(location), _region(location)))
 if address_label:
     summary += u"Adres: {}\n".format(address_label)
 summary += u"Alan: parsel ± {:g} m\n\n".format(margin_m)
